@@ -1,0 +1,106 @@
+{
+  "Comment": "JalMarg (जलमार्ग) - Autonomous Flood Incident Ingestion, Cedar Verification & Civic Dispatch State Machine",
+  "StartAt": "EvaluateCedarAuthorization",
+  "States": {
+    "EvaluateCedarAuthorization": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-south-1:123456789012:function:JalMargCedarAuthorizer",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.authorizationResult",
+      "Next": "CheckAuthorizationDecision"
+    },
+    "CheckAuthorizationDecision": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.authorizationResult.Payload.decision",
+          "StringEquals": "ALLOW",
+          "Next": "EstimateDepthAndAnchors"
+        }
+      ],
+      "Default": "AuthorizationFailed"
+    },
+    "AuthorizationFailed": {
+      "Type": "Fail",
+      "Error": "CedarAuthorizationDenied",
+      "Cause": "The principal does not have permission under active Cedar policies to perform this action."
+    },
+    "EstimateDepthAndAnchors": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-south-1:123456789012:function:JalMargDepthEstimator",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.depthResult",
+      "Next": "IndexOpenSearchAndPersistDynamo"
+    },
+    "IndexOpenSearchAndPersistDynamo": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-south-1:123456789012:function:JalMargSpatialIndexer",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.storageResult",
+      "Next": "CheckCriticalThreshold"
+    },
+    "CheckCriticalThreshold": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.depthResult.Payload.estimated_depth_cm",
+          "NumericGreaterThanEquals": 35,
+          "Next": "ParallelCriticalDispatch"
+        }
+      ],
+      "Default": "PublishStandardTelemetry"
+    },
+    "ParallelCriticalDispatch": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "SendCivicPumpPrioritySQS",
+          "States": {
+            "SendCivicPumpPrioritySQS": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sqs:sendMessage",
+              "Parameters": {
+                "QueueUrl": "https://sqs.ap-south-1.amazonaws.com/123456789012/jalmarg-incident-priority-queue",
+                "MessageBody.$": "$"
+              },
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "BroadcastPollyAudioAlertSNS",
+          "States": {
+            "BroadcastPollyAudioAlertSNS": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:ap-south-1:123456789012:jalmarg-critical-audio-alerts",
+                "Message.$": "$"
+              },
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "CompleteIncidentWorkflow"
+    },
+    "PublishStandardTelemetry": {
+      "Type": "Pass",
+      "Result": { "status": "PUBLISHED_TO_MAP" },
+      "ResultPath": "$.dispatchStatus",
+      "Next": "CompleteIncidentWorkflow"
+    },
+    "CompleteIncidentWorkflow": {
+      "Type": "Succeed"
+    }
+  }
+}

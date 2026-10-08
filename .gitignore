@@ -1,0 +1,33 @@
+# System Files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Environment Variables & Secrets
+.env
+.env.local
+*.pem
+credentials.json
+
+# Build Outputs
+dist/
+build/
+.aws-sam/
+out/
+
+# LocalStack & Docker Data
+.localstack/
+opensearch-data/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp

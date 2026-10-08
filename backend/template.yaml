@@ -1,0 +1,180 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  JalMarg (जलमार्ग) - Autonomous Urban Flood-Depth Intelligence & Monsoon Navigation Protocol
+  AWS Serverless Application Model (SAM) Specification
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.12
+    Tracing: Active
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref JalMargIncidentsTable
+        BUCKET_NAME: !Ref JalMargEvidenceBucket
+        EVENT_BUS_NAME: !Ref JalMargEventBus
+        QUEUE_URL: !Ref JalMargIncidentQueue
+
+Resources:
+  # ==========================================
+  # STORAGE: DynamoDB Table with TTL
+  # ==========================================
+  JalMargIncidentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: JalMarg_Incidents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: City
+          AttributeType: S
+        - AttributeName: CreatedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: CityIndex
+          KeySchema:
+            - AttributeName: City
+              KeyType: HASH
+            - AttributeName: CreatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  # ==========================================
+  # STORAGE: S3 Evidence Vault
+  # ==========================================
+  JalMargEvidenceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "jalmarg-evidence-vault-${AWS::AccountId}-${AWS::Region}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  # ==========================================
+  # MESSAGING: EventBridge Custom Event Bus
+  # ==========================================
+  JalMargEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: jalmarg-event-bus
+
+  # ==========================================
+  # MESSAGING: SQS Priority & Dead Letter Queues
+  # ==========================================
+  JalMargIncidentDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: jalmarg-incident-dlq
+      MessageRetentionPeriod: 1209600 # 14 days
+
+  JalMargIncidentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: jalmarg-incident-priority-queue
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt JalMargIncidentDLQ.Arn
+        maxReceiveCount: 3
+
+  # EventBridge Rule to route Critical Flood Incidents to SQS
+  CriticalFloodEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref JalMargEventBus
+      Name: jalmarg-critical-flood-rule
+      EventPattern:
+        source:
+          - "jalmarg.incident"
+        detail-type:
+          - "IncidentReported"
+        detail:
+          severity:
+            - "CRITICAL_NO_ENTRY"
+            - "MODERATE_RISK"
+      Targets:
+        - Arn: !GetAtt JalMargIncidentQueue.Arn
+          Id: "CriticalIncidentQueueTarget"
+
+  # ==========================================
+  # API GATEWAY
+  # ==========================================
+  JalMargApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+
+  # ==========================================
+  # SERVERLESS COMPUTE: Lambda Handlers
+  # ==========================================
+  IngestIncidentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: ingest_incident.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JalMargIncidentsTable
+        - S3CrudPolicy:
+            BucketName: !Ref JalMargEvidenceBucket
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref JalMargEventBus
+      Events:
+        PostIncident:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JalMargApi
+            Path: /incidents
+            Method: post
+
+  QueryIncidentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: query_incidents.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JalMargIncidentsTable
+      Events:
+        GetIncidents:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JalMargApi
+            Path: /incidents
+            Method: get
+
+Outputs:
+  JalMargApiUrl:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${JalMargApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  IncidentsTableName:
+    Description: "DynamoDB Table Name"
+    Value: !Ref JalMargIncidentsTable
+  EvidenceBucketName:
+    Description: "S3 Evidence Vault Bucket Name"
+    Value: !Ref JalMargEvidenceBucket
+  EventBusName:
+    Description: "Custom EventBridge Bus Name"
+    Value: !Ref JalMargEventBus

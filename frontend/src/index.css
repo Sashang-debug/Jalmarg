@@ -1,0 +1,168 @@
+/* ==========================================================================
+   JalMarg (जलमार्ग) Design System: Midnight Tactical Storm
+   Adhering to .agents/skills/design-taste-frontend standards
+   ========================================================================== */
+
+:root {
+  /* Surface & Base Colors */
+  --bg-primary: #080C14;
+  --bg-secondary: #0D121F;
+  --bg-surface: rgba(15, 22, 36, 0.75);
+  --bg-surface-elevated: rgba(22, 32, 52, 0.85);
+  --bg-surface-subtle: rgba(255, 255, 255, 0.03);
+
+  /* Borders & Glass */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --glass-blur: blur(16px);
+
+  /* Semantic Telemetry Colors */
+  --status-safe: #10B981;        /* < 15cm (Passable) */
+  --status-caution: #F59E0B;     /* 15-35cm (Moderate Risk) */
+  --status-critical: #EF4444;    /* > 35cm (Submerged / No Entry) */
+  --status-pothole: #8B5CF6;     /* Post-flood damaged road */
+  --brand-cyan: #06B6D4;         /* Radar & Sensor Telemetry */
+
+  /* Text & Content */
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --text-highlight: #38BDF8;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit', sans-serif;
+
+  /* Elevation */
+  --shadow-tactical: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+  --shadow-glow-cyan: 0 0 20px rgba(6, 182, 212, 0.25);
+  --shadow-glow-critical: 0 0 24px rgba(239, 68, 68, 0.35);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Glassmorphic Panel Utility */
+.glass-panel {
+  background: var(--bg-surface);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-tactical);
+}
+
+.glass-panel-elevated {
+  background: var(--bg-surface-elevated);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: var(--shadow-tactical);
+}
+
+/* Radar Pulse Animations */
+@keyframes radar-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(6, 182, 212, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0);
+  }
+}
+
+@keyframes critical-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.pulse-radar {
+  animation: radar-pulse 2s infinite;
+}
+
+.pulse-critical {
+  animation: critical-pulse 1.6s infinite;
+}
+
+/* Leaflet Dark Map Overrides */
+.leaflet-container {
+  background-color: var(--bg-primary) !important;
+  font-family: var(--font-sans) !important;
+  height: 100%;
+  width: 100%;
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--bg-surface-elevated) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  border: 1px solid var(--border-strong) !important;
+  color: var(--text-primary) !important;
+  border-radius: 10px !important;
+  box-shadow: var(--shadow-tactical) !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-surface-elevated) !important;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
