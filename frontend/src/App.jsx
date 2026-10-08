@@ -1,207 +1,235 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import TacticalHeader from './components/TacticalHeader'
+import InteractiveMap from './components/InteractiveMap'
+import JourneyPlanner from './components/JourneyPlanner'
+import AudioRadarDrawer from './components/AudioRadarDrawer'
+import ReportModal from './components/ReportModal'
+import MunicipalPumpDashboard from './components/MunicipalPumpDashboard'
+import IncidentDetailModal from './components/IncidentDetailModal'
 import { 
-  Navigation, 
-  Bike, 
-  Car, 
-  Truck, 
-  Radio, 
-  AlertTriangle, 
-  ShieldCheck, 
-  Volume2,
-  Droplets,
-  Layers,
-  Sparkles
-} from 'lucide-react'
+  MULTI_CITY_INCIDENTS, 
+  MULTI_CITY_POTHOLES, 
+  MULTI_CITY_ROUTES,
+  CITY_CONFIGS,
+  calculateDynamicRoute
+} from './data/mockTelemetry'
 
 export default function App() {
-  const [vehicle, setVehicle] = useState('bike') // 'bike' | 'car' | 'suv'
+  const [vehicle, setVehicle] = useState('BIKE') // 'BIKE' | 'SEDAN' | 'SUV'
+  const [selectedCity, setSelectedCity] = useState('BLR') // 'BLR' | 'DEL' | 'BOM'
+  const [allIncidents, setAllIncidents] = useState(MULTI_CITY_INCIDENTS)
+  const [showPotholes, setShowPotholes] = useState(true)
   const [audioRadarActive, setAudioRadarActive] = useState(true)
+  const [userLocation, setUserLocation] = useState(null)
+  const [isLocating, setIsLocating] = useState(false)
+
+  // Dynamic Navigation Origin and Destination State
+  const [origin, setOrigin] = useState(() => MULTI_CITY_ROUTES.BLR.origin)
+  const [destination, setDestination] = useState(() => MULTI_CITY_ROUTES.BLR.destination)
+  const [pickingMode, setPickingMode] = useState(null) // 'ORIGIN' | 'DESTINATION' | null
+
+  // Modals
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [isCivicDashboardOpen, setIsCivicDashboardOpen] = useState(false)
+  const [selectedIncident, setSelectedIncident] = useState(null)
+
+  // Current city active telemetry
+  const currentIncidents = allIncidents[selectedCity] || []
+  const currentPotholes = MULTI_CITY_POTHOLES[selectedCity] || []
+
+  // Auto-reset default corridor when city changes
+  useEffect(() => {
+    const cityRoute = MULTI_CITY_ROUTES[selectedCity] || MULTI_CITY_ROUTES.BLR
+    setOrigin(cityRoute.origin)
+    setDestination(cityRoute.destination)
+    setPickingMode(null)
+  }, [selectedCity])
+
+  // Real-time Dynamic Flood Clearance Routing Calculation
+  const activeRouteData = calculateDynamicRoute(
+    origin,
+    destination,
+    selectedCity,
+    vehicle,
+    currentIncidents
+  )
+
+  // 1. Auto-Fetch GPS Location feature
+  const handleAutoDetectLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.")
+      return
+    }
+
+    setIsLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userLat = position.coords.latitude
+        const userLng = position.coords.longitude
+        setUserLocation({ lat: userLat, lng: userLng })
+
+        // Calculate closest supported metro
+        const distToBlr = Math.hypot(userLat - 12.9716, userLng - 77.5946)
+        const distToDel = Math.hypot(userLat - 28.6139, userLng - 77.2090)
+        const distToBom = Math.hypot(userLat - 19.0760, userLng - 72.8777)
+
+        let closest = 'BLR'
+        if (distToDel < distToBlr && distToDel < distToBom) closest = 'DEL'
+        else if (distToBom < distToBlr && distToBom < distToDel) closest = 'BOM'
+
+        setSelectedCity(closest)
+        setIsLocating(false)
+      },
+      (error) => {
+        console.warn("Geolocation access denied or timed out:", error.message)
+        // Graceful fallback to Delhi for demo
+        setUserLocation({ lat: 28.6320, lng: 77.2280 })
+        setSelectedCity('DEL')
+        setIsLocating(false)
+      },
+      { timeout: 8000, enableHighAccuracy: true }
+    )
+  }
+
+  // 2. Point Swap and Map Click Handlers
+  const handleSwapPoints = () => {
+    const temp = origin
+    setOrigin(destination)
+    setDestination(temp)
+  }
+
+  const handleMapClick = (latlng) => {
+    const pointName = `📍 Custom Point (${latlng.lat.toFixed(3)}, ${latlng.lng.toFixed(3)})`
+    const newPoint = { lat: latlng.lat, lng: latlng.lng, name: pointName }
+    if (pickingMode === 'ORIGIN') {
+      setOrigin(newPoint)
+    } else if (pickingMode === 'DESTINATION') {
+      setDestination(newPoint)
+    }
+    setPickingMode(null)
+  }
+
+  // 3. Add crowdsourced incident
+  const handleAddIncident = (newIncident) => {
+    setAllIncidents(prev => ({
+      ...prev,
+      [selectedCity]: [newIncident, ...(prev[selectedCity] || [])]
+    }))
+  }
+
+  // 4. Dispatch de-watering pump unit
+  const handleDispatchPump = (incidentId) => {
+    setAllIncidents(prev => ({
+      ...prev,
+      [selectedCity]: prev[selectedCity].map(inc => {
+        if (inc.id === incidentId) {
+          return {
+            ...inc,
+            pumpDispatched: true,
+            pumpStatus: 'PUMP_EN_ROUTE'
+          }
+        }
+        return inc
+      })
+    }))
+  }
+
+  const activePumpTicketsCount = currentIncidents.filter(i => i.depthCm >= 25 && !i.pumpDispatched).length
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'var(--bg-primary)' }}>
-      {/* Top Tactical Navigation Header */}
-      <header className="glass-panel" style={{
-        margin: '12px 16px 8px 16px',
-        padding: '10px 18px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        zIndex: 1000
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100vh',
+      width: '100vw',
+      background: 'var(--bg-primary)',
+      overflow: 'hidden',
+      position: 'relative'
+    }}>
+      {/* 1. Tactical Header with City Selector & Auto-Fetch GPS */}
+      <TacticalHeader
+        vehicle={vehicle}
+        setVehicle={setVehicle}
+        audioRadarActive={audioRadarActive}
+        setAudioRadarActive={setAudioRadarActive}
+        showPotholes={showPotholes}
+        setShowPotholes={setShowPotholes}
+        onOpenReportModal={() => setIsReportModalOpen(true)}
+        onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
+        activePumpTicketsCount={activePumpTicketsCount}
+        selectedCity={selectedCity}
+        setSelectedCity={setSelectedCity}
+        onAutoDetectLocation={handleAutoDetectLocation}
+        isLocating={isLocating}
+      />
+
+      {/* 2. Interactive Tactical Map Canvas */}
+      <main style={{
+        flex: 1,
+        position: 'relative',
+        margin: '0 16px 16px 16px',
+        borderRadius: '14px',
+        overflow: 'hidden',
+        border: '1px solid var(--border-subtle)',
+        boxShadow: 'var(--shadow-tactical)'
       }}>
-        {/* Brand / Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #06B6D4, #0284C7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: 'var(--shadow-glow-cyan)'
-          }}>
-            <Droplets size={22} color="#ffffff" />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h1 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', margin: 0 }}>JalMarg</h1>
-              <span style={{ fontSize: '0.85rem', color: 'var(--brand-cyan)', fontWeight: 600 }}>जलमार्ग</span>
-              <span style={{
-                background: 'rgba(6, 182, 212, 0.15)',
-                color: 'var(--brand-cyan)',
-                fontSize: '0.65rem',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontWeight: 700,
-                letterSpacing: '0.05em'
-              }}>LIVE TELEMETRY</span>
-            </div>
-            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: 0 }}>
-              Autonomous Flood-Depth & Monsoon Navigation Protocol
-            </p>
-          </div>
-        </div>
+        {/* Floating Google Navigation Journey Planner Pill */}
+        <JourneyPlanner
+          selectedCity={selectedCity}
+          origin={origin}
+          destination={destination}
+          onSelectOrigin={(pt) => setOrigin(pt)}
+          onSelectDestination={(pt) => setDestination(pt)}
+          onSwapPoints={handleSwapPoints}
+          pickingMode={pickingMode}
+          setPickingMode={setPickingMode}
+          vehicle={vehicle}
+          routeData={activeRouteData}
+          onAutoDetectLocation={handleAutoDetectLocation}
+        />
 
-        {/* Center: Vehicle Clearance Selector */}
-        <div className="glass-panel" style={{
-          display: 'flex',
-          padding: '4px',
-          gap: '4px',
-          background: 'rgba(0, 0, 0, 0.35)'
-        }}>
-          <button 
-            onClick={() => setVehicle('bike')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              background: vehicle === 'bike' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-              color: vehicle === 'bike' ? 'var(--brand-cyan)' : 'var(--text-muted)',
-              borderBottom: vehicle === 'bike' ? '2px solid var(--brand-cyan)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.82rem',
-              transition: 'var(--transition-fast)'
-            }}
-          >
-            <Bike size={16} />
-            <span>2-Wheeler</span>
-            <span style={{ fontSize: '0.65rem', opacity: 0.7 }} className="tabular-nums">(&lt;25cm)</span>
-          </button>
+        <InteractiveMap
+          selectedCity={selectedCity}
+          incidents={currentIncidents}
+          potholes={currentPotholes}
+          showPotholes={showPotholes}
+          vehicle={vehicle}
+          activeRoute={activeRouteData}
+          userLocation={userLocation}
+          onSelectIncident={(inc) => setSelectedIncident(inc)}
+          pickingMode={pickingMode}
+          onMapClick={handleMapClick}
+        />
 
-          <button 
-            onClick={() => setVehicle('car')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              background: vehicle === 'car' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-              color: vehicle === 'car' ? 'var(--brand-cyan)' : 'var(--text-muted)',
-              borderBottom: vehicle === 'car' ? '2px solid var(--brand-cyan)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.82rem',
-              transition: 'var(--transition-fast)'
-            }}
-          >
-            <Car size={16} />
-            <span>Sedan / Hatch</span>
-            <span style={{ fontSize: '0.65rem', opacity: 0.7 }} className="tabular-nums">(&lt;35cm)</span>
-          </button>
-
-          <button 
-            onClick={() => setVehicle('suv')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              background: vehicle === 'suv' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-              color: vehicle === 'suv' ? 'var(--brand-cyan)' : 'var(--text-muted)',
-              borderBottom: vehicle === 'suv' ? '2px solid var(--brand-cyan)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.82rem',
-              transition: 'var(--transition-fast)'
-            }}
-          >
-            <Truck size={16} />
-            <span>SUV / Bus</span>
-            <span style={{ fontSize: '0.65rem', opacity: 0.7 }} className="tabular-nums">(&lt;60cm)</span>
-          </button>
-        </div>
-
-        {/* Right: Audio Radar Toggle & City Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button 
-            onClick={() => setAudioRadarActive(!audioRadarActive)}
-            className={audioRadarActive ? "pulse-radar" : ""}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 14px',
-              borderRadius: '10px',
-              border: '1px solid ' + (audioRadarActive ? 'var(--brand-cyan)' : 'var(--border-subtle)'),
-              background: audioRadarActive ? 'rgba(6, 182, 212, 0.15)' : 'var(--bg-surface-subtle)',
-              color: audioRadarActive ? 'var(--brand-cyan)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.82rem'
-            }}
-          >
-            <Volume2 size={16} />
-            <span>Audio Radar</span>
-            <span style={{ 
-              width: '8px', 
-              height: '8px', 
-              borderRadius: '50%', 
-              backgroundColor: audioRadarActive ? 'var(--status-safe)' : 'var(--text-muted)' 
-            }}></span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Map & Workspace Canvas */}
-      <main style={{ flex: 1, position: 'relative', margin: '0 16px 16px 16px', borderRadius: '14px', overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
-        <div id="map-placeholder" style={{
-          width: '100%',
-          height: '100%',
-          background: 'radial-gradient(circle at 50% 50%, #0F172A 0%, #080C14 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-secondary)'
-        }}>
-          <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '50%',
-            background: 'rgba(6, 182, 212, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '16px'
-          }} className="pulse-radar">
-            <Radio size={32} color="var(--brand-cyan)" />
-          </div>
-          <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
-            JalMarg Live Spatial Grid Initialized
-          </h2>
-          <p style={{ maxWidth: '520px', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Phase 1 Scaffolding Complete. Ready to mount Leaflet MapLibre vector layers, active flood polygons, and real-time AWS Step Functions telemetry.
-          </p>
-        </div>
+        {/* 3. Hands-Free Audio Radar Overlay */}
+        <AudioRadarDrawer
+          active={audioRadarActive}
+          onClose={() => setAudioRadarActive(false)}
+          routeData={activeRouteData}
+        />
       </main>
+
+      {/* 4. Incident Reporting Modal */}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        onAddIncident={handleAddIncident}
+      />
+
+      {/* 5. Municipal Pump Command Center Slide-Over */}
+      <MunicipalPumpDashboard
+        isOpen={isCivicDashboardOpen}
+        onClose={() => setIsCivicDashboardOpen(false)}
+        incidents={currentIncidents}
+        onDispatchPump={handleDispatchPump}
+      />
+
+      {/* 6. Incident Telemetry Detail Modal */}
+      <IncidentDetailModal
+        incident={selectedIncident}
+        onClose={() => setSelectedIncident(null)}
+        onDispatchPump={handleDispatchPump}
+      />
     </div>
   )
 }

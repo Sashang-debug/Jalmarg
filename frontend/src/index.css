@@ -130,12 +130,51 @@ h1, h2, h3, h4 {
   animation: critical-pulse 1.6s infinite;
 }
 
-/* Leaflet Dark Map Overrides */
+/* Leaflet Map Overrides */
 .leaflet-container {
-  background-color: var(--bg-primary) !important;
+  background-color: #1A202C !important;
   font-family: var(--font-sans) !important;
   height: 100%;
   width: 100%;
+}
+
+/* Google Maps Dark Mode Recreation: Crisp Roads, White Text Labels, Dark Slate/Navy Background */
+.google-dark-tiles {
+  filter: invert(100%) hue-rotate(180deg) brightness(98%) contrast(115%) saturate(1.05);
+}
+
+/* Google Navigation Glowing Route Casing with Luminous Halo */
+.route-laser-green {
+  filter: drop-shadow(0 0 10px rgba(0, 230, 118, 0.95)) drop-shadow(0 0 3px #FFFFFF);
+  animation: route-pulse-green 2.5s ease-in-out infinite alternate;
+}
+
+.route-laser-blue {
+  filter: drop-shadow(0 0 10px rgba(66, 133, 244, 0.95)) drop-shadow(0 0 3px #FFFFFF);
+  animation: route-pulse-blue 2.5s ease-in-out infinite alternate;
+}
+
+.route-hazard-red {
+  filter: drop-shadow(0 0 8px rgba(255, 23, 68, 0.95));
+}
+
+@keyframes route-pulse-green {
+  0% { filter: drop-shadow(0 0 8px rgba(0, 230, 118, 0.8)); }
+  100% { filter: drop-shadow(0 0 16px rgba(0, 230, 118, 1)) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9)); }
+}
+
+@keyframes route-pulse-blue {
+  0% { filter: drop-shadow(0 0 8px rgba(66, 133, 244, 0.8)); }
+  100% { filter: drop-shadow(0 0 16px rgba(66, 133, 244, 1)) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9)); }
+}
+
+.custom-flood-marker, .custom-pothole-marker {
+  transition: transform 0.15s ease;
+}
+
+.custom-flood-marker:hover, .custom-pothole-marker:hover {
+  transform: scale(1.12);
+  z-index: 1000 !important;
 }
 
 .leaflet-popup-content-wrapper {
