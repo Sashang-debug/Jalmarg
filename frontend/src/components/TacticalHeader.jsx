@@ -26,7 +26,9 @@ export default function TacticalHeader({
   selectedCity,
   setSelectedCity,
   onAutoDetectLocation,
-  isLocating
+  isLocating,
+  googleApiKey,
+  onOpenKeyModal
 }) {
   return (
     <header className="glass-panel" style={{
@@ -251,6 +253,29 @@ export default function TacticalHeader({
         >
           <Volume2 size={15} />
           <span>Audio Radar</span>
+        </button>
+
+        {/* Google Maps API Connection Button */}
+        <button
+          onClick={onOpenKeyModal}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 12px',
+            borderRadius: '8px',
+            border: googleApiKey ? '1.5px solid #4285F4' : '1px solid rgba(255, 255, 255, 0.15)',
+            background: googleApiKey ? 'rgba(66, 133, 244, 0.2)' : 'var(--bg-surface-subtle)',
+            color: googleApiKey ? '#93C5FD' : 'var(--text-muted)',
+            cursor: 'pointer',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            transition: 'var(--transition-fast)'
+          }}
+          title={googleApiKey ? "Google Maps API active - Click to manage" : "Connect Google Maps API Key"}
+        >
+          <span style={{ fontSize: '13px' }}>🗺️</span>
+          <span>{googleApiKey ? 'Google Maps: ON' : 'Connect Google Maps'}</span>
         </button>
 
         {/* Civic Command Center (BBMP/BMC Dashboard) */}

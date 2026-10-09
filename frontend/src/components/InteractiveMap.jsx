@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { Map, Moon, Layers, Navigation, Compass, AlertTriangle } from 'lucide-react'
 import { CITY_CONFIGS } from '../data/mockTelemetry'
+import GoogleMapEngine from './GoogleMapEngine'
 
 export default function InteractiveMap({
   selectedCity,
@@ -13,8 +14,27 @@ export default function InteractiveMap({
   userLocation,
   onSelectIncident,
   pickingMode,
-  onMapClick
+  onMapClick,
+  googleApiKey
 }) {
+  // If Google Maps API Key is active, delegate rendering to official Google Map engine
+  if (googleApiKey) {
+    return (
+      <GoogleMapEngine
+        apiKey={googleApiKey}
+        selectedCity={selectedCity}
+        incidents={incidents}
+        potholes={potholes}
+        showPotholes={showPotholes}
+        vehicle={vehicle}
+        activeRoute={activeRoute}
+        userLocation={userLocation}
+        onSelectIncident={onSelectIncident}
+        pickingMode={pickingMode}
+        onMapClick={onMapClick}
+      />
+    )
+  }
   const mapContainerRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const tileLayerRef = useRef(null)

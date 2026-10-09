@@ -6,6 +6,7 @@ import AudioRadarDrawer from './components/AudioRadarDrawer'
 import ReportModal from './components/ReportModal'
 import MunicipalPumpDashboard from './components/MunicipalPumpDashboard'
 import IncidentDetailModal from './components/IncidentDetailModal'
+import GoogleApiKeyModal from './components/GoogleApiKeyModal'
 import { 
   MULTI_CITY_INCIDENTS, 
   MULTI_CITY_POTHOLES, 
@@ -13,6 +14,12 @@ import {
   CITY_CONFIGS,
   calculateDynamicRoute
 } from './data/mockTelemetry'
+import {
+  fetchStreetRoute,
+  findCorridorHazard,
+  calculateDetourWaypoint,
+  VEHICLE_THRESHOLDS
+} from './utils/roadRouter'
 
 export default function App() {
   const [vehicle, setVehicle] = useState('BIKE') // 'BIKE' | 'SEDAN' | 'SUV'
@@ -23,10 +30,19 @@ export default function App() {
   const [userLocation, setUserLocation] = useState(null)
   const [isLocating, setIsLocating] = useState(false)
 
+  // Google Maps API Key State (from .env or localStorage)
+  const [googleApiKey, setGoogleApiKey] = useState(() => {
+    return import.meta.env.VITE_GOOGLE_MAPS_API_KEY || localStorage.getItem('jalmarg_gmaps_api_key') || ''
+  })
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false)
+
   // Dynamic Navigation Origin and Destination State
   const [origin, setOrigin] = useState(() => MULTI_CITY_ROUTES.BLR.origin)
   const [destination, setDestination] = useState(() => MULTI_CITY_ROUTES.BLR.destination)
   const [pickingMode, setPickingMode] = useState(null) // 'ORIGIN' | 'DESTINATION' | null
+
+  // Real-world street-accurate road geometry state
+  const [realRoadRoute, setRealRoadRoute] = useState(null)
 
   // Modals
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
@@ -43,16 +59,75 @@ export default function App() {
     setOrigin(cityRoute.origin)
     setDestination(cityRoute.destination)
     setPickingMode(null)
+    setRealRoadRoute(null)
   }, [selectedCity])
 
-  // Real-time Dynamic Flood Clearance Routing Calculation
+  // Resolve Real Road Network geometry when origin/destination change
+  useEffect(() => {
+    let isCancelled = false
+    async function resolveStreets() {
+      if (!origin || !destination) return
+
+      const cityDefaults = MULTI_CITY_ROUTES[selectedCity] || MULTI_CITY_ROUTES.BLR
+      const isDefault =
+        cityDefaults &&
+        Math.abs(origin.lat - cityDefaults.origin.lat) < 0.005 &&
+        Math.abs(origin.lng - cityDefaults.origin.lng) < 0.005 &&
+        Math.abs(destination.lat - cityDefaults.destination.lat) < 0.005 &&
+        Math.abs(destination.lng - cityDefaults.destination.lng) < 0.005
+
+      // For default corridor endpoints, mockTelemetry already has high-res road coordinates
+      if (isDefault) {
+        setRealRoadRoute(null)
+        return
+      }
+
+      // Fetch authentic street road geometry from OSRM
+      const direct = await fetchStreetRoute([origin, destination])
+      if (isCancelled || !direct) return
+
+      const hazard = findCorridorHazard(direct.path, currentIncidents)
+      const limit = VEHICLE_THRESHOLDS[vehicle] || 20
+      const isBlocked = hazard && hazard.depthCm >= limit
+
+      let detour = null
+      if (isBlocked && hazard) {
+        const detourWaypoint = calculateDetourWaypoint(origin, destination, hazard)
+        detour = await fetchStreetRoute([origin, detourWaypoint, destination])
+      }
+
+      if (!isCancelled) {
+        setRealRoadRoute({
+          directPath: direct.path,
+          detourPath: detour ? detour.path : direct.path,
+          distanceKm: detour ? detour.distanceKm : direct.distanceKm,
+          durationMins: detour ? detour.durationMins : direct.durationMins
+        })
+      }
+    }
+
+    resolveStreets()
+    return () => { isCancelled = true }
+  }, [origin, destination, selectedCity, vehicle, currentIncidents])
+
+  // Real-time Dynamic Flood Clearance Routing Calculation (Snapped to Real Roads)
   const activeRouteData = calculateDynamicRoute(
     origin,
     destination,
     selectedCity,
     vehicle,
-    currentIncidents
+    currentIncidents,
+    realRoadRoute
   )
+
+  const handleSaveApiKey = (newKey) => {
+    setGoogleApiKey(newKey)
+    if (newKey) {
+      localStorage.setItem('jalmarg_gmaps_api_key', newKey)
+    } else {
+      localStorage.removeItem('jalmarg_gmaps_api_key')
+    }
+  }
 
   // 1. Auto-Fetch GPS Location feature
   const handleAutoDetectLocation = () => {
@@ -161,6 +236,8 @@ export default function App() {
         setSelectedCity={setSelectedCity}
         onAutoDetectLocation={handleAutoDetectLocation}
         isLocating={isLocating}
+        googleApiKey={googleApiKey}
+        onOpenKeyModal={() => setIsKeyModalOpen(true)}
       />
 
       {/* 2. Interactive Tactical Map Canvas */}
@@ -199,6 +276,7 @@ export default function App() {
           onSelectIncident={(inc) => setSelectedIncident(inc)}
           pickingMode={pickingMode}
           onMapClick={handleMapClick}
+          googleApiKey={googleApiKey}
         />
 
         {/* 3. Hands-Free Audio Radar Overlay */}
@@ -229,6 +307,14 @@ export default function App() {
         incident={selectedIncident}
         onClose={() => setSelectedIncident(null)}
         onDispatchPump={handleDispatchPump}
+      />
+
+      {/* 7. Google Maps API Key Modal */}
+      <GoogleApiKeyModal
+        isOpen={isKeyModalOpen}
+        onClose={() => setIsKeyModalOpen(false)}
+        currentApiKey={googleApiKey}
+        onSaveApiKey={handleSaveApiKey}
       />
     </div>
   )

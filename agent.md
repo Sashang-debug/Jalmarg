@@ -169,6 +169,8 @@ For **every single feature or component**, the agent must strictly execute in th
 - [x] **4.8 Frontend Verification** (Verified with `npm run build` [277ms bundle] and running live on `http://localhost:5173/`)
 - [x] **4.9 Google Maps Dark Navigation Palette Upgrade** (Integrated authentic Google Maps multi-subdomain tiles, Navy Slate `#181E29` background, stark white road text `#FFFFFF`, luminous double-cased Emerald `#00E676` & Electric Blue `#4285F4` laser routes, and floating route waypoint badges)
 - [x] **4.10 Dynamic Start & Destination Journey Planner** (Created `frontend/src/components/JourneyPlanner.jsx`: Google Navigation style pill with Start/Destination selectors, one-click point swapping, quick landmark chips, map-click crosshair picker, real-time clearance routing calculation, and responsive Amazon Polly audio radar sync)
+- [x] **4.11 Real Street-Accurate Road Network Snapping** (Fixed off-road diagonal routes: integrated high-resolution real asphalt road geometries via OSRM & road router cache in `frontend/src/utils/roadRouter.js` and `mockTelemetry.js`, eliminating cross-building lines)
+- [x] **4.12 Google Maps JavaScript API Engine & Key Manager** (Created `frontend/src/components/GoogleMapEngine.jsx` using `@googlemaps/js-api-loader` with official Google dark styling, live traffic layer toggle, custom HTML depth overlays, and real-time key connection modal `GoogleApiKeyModal.jsx` with zero-restart fallback)
 
 ### Phase 5: Observability, Packaging & Pitch Polish
 - [ ] **5.1 Amazon CloudWatch Dashboard & Alarms** (Live operational metrics)
@@ -179,5 +181,5 @@ For **every single feature or component**, the agent must strictly execute in th
 
 ## 6. Current Status & Next Immediate Action
 
-* **Current State:** **Phase 4 Complete.** Full frontend cockpit running live at `http://localhost:5173/` adhering to `design-taste-frontend` skill.
-* **Next Immediate Task:** Proceed to **Phase 5: Observability, Packaging & Pitch Polish** (Amazon CloudWatch dashboard metrics, AWS X-Ray service tracing map, and pitch deck rehearsal).
+* **Current State:** **Phase 4 Complete & Enhanced.** Street-accurate asphalt road routing active; Google Maps API Engine ready with live key management.
+* **Next Immediate Task:** User provides Google Maps API key; proceed to **Phase 5: Observability, Packaging & Pitch Polish**.
