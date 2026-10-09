@@ -401,62 +401,43 @@ export default function GoogleMapEngine({
         }}
       />
 
-      {/* Floating Google Controls Cockpit */}
-      <div style={{
-        position: 'absolute',
-        top: '16px',
-        right: '16px',
-        zIndex: 500,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px'
-      }}>
-        {/* Live Google Traffic Layer Toggle */}
-        <button
-          onClick={() => setShowTraffic(!showTraffic)}
-          className="glass-panel"
-          style={{
-            padding: '8px 12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.78rem',
-            fontWeight: 800,
-            cursor: 'pointer',
-            border: showTraffic ? '1.5px solid #10B981' : '1px solid rgba(255, 255, 255, 0.15)',
-            background: showTraffic ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.9)',
-            color: showTraffic ? '#10B981' : '#94A3B8',
-            borderRadius: '8px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.6)'
-          }}
-        >
-          <TrafficCone size={15} color={showTraffic ? '#10B981' : '#94A3B8'} />
-          <span>{showTraffic ? 'GOOGLE TRAFFIC: ON' : 'GOOGLE TRAFFIC: OFF'}</span>
-        </button>
-
-        {/* Theme Toggle (Dark vs Standard) */}
-        <button
-          onClick={() => setMapStyleType(mapStyleType === 'DARK' ? 'DEFAULT' : 'DARK')}
-          className="glass-panel"
-          style={{
-            padding: '8px 12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.78rem',
-            fontWeight: 800,
-            cursor: 'pointer',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            background: 'rgba(15, 23, 42, 0.9)',
-            color: '#E2E8F0',
-            borderRadius: '8px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.6)'
-          }}
-        >
-          <Layers size={15} color="#00E5FF" />
-          <span>{mapStyleType === 'DARK' ? 'NIGHT COCKPIT' : 'DAY STREETS'}</span>
-        </button>
-      </div>
+      {/* Bottom-Left Google Maps Layers Toggle Thumbnail (Matches Screenshot 1) */}
+      <button
+        onClick={() => setMapStyleType(mapStyleType === 'DARK' ? 'DEFAULT' : 'DARK')}
+        title="Toggle Map Style (Night Navigation / Day Streets)"
+        style={{
+          position: 'absolute',
+          bottom: '24px',
+          left: '24px',
+          zIndex: 500,
+          width: '56px',
+          height: '56px',
+          borderRadius: '10px',
+          background: mapStyleType === 'DARK' ? '#181E29' : '#FFFFFF',
+          border: '2px solid #FFFFFF',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '3px',
+          padding: 0,
+          transition: 'transform 0.15s, box-shadow 0.15s'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+      >
+        <Layers size={20} color={mapStyleType === 'DARK' ? '#00E5FF' : '#1A73E8'} />
+        <span style={{
+          fontSize: '10px',
+          fontWeight: 700,
+          color: mapStyleType === 'DARK' ? '#FFFFFF' : '#3C4043',
+          fontFamily: 'Roboto, Arial, sans-serif'
+        }}>
+          Layers
+        </span>
+      </button>
 
       {/* Floating Re-Center Button */}
       <button

@@ -531,107 +531,91 @@ export default function InteractiveMap({
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* 1. Basemap Style Switcher (Top-Right) */}
-      <div className="glass-panel" style={{
-        position: 'absolute',
-        top: '16px',
-        right: '16px',
-        zIndex: 500,
-        padding: '4px',
-        display: 'flex',
-        gap: '4px',
-        background: 'rgba(15, 23, 42, 0.92)',
-        border: '1px solid rgba(255, 255, 255, 0.25)',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.5)'
-      }}>
-        <button
-          onClick={() => setMapStyle('DARK')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            background: mapStyle === 'DARK' ? '#4285F4' : 'transparent',
-            color: mapStyle === 'DARK' ? '#FFFFFF' : 'var(--text-secondary)',
-            fontWeight: 800,
-            fontSize: '0.75rem',
-            boxShadow: mapStyle === 'DARK' ? '0 0 10px rgba(66, 133, 244, 0.5)' : 'none'
-          }}
-        >
-          <Moon size={13} />
-          <span>Google Dark Navigation</span>
-        </button>
-
-        <button
-          onClick={() => setMapStyle('VOYAGER')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '6px 10px',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            background: mapStyle === 'VOYAGER' ? '#4285F4' : 'transparent',
-            color: mapStyle === 'VOYAGER' ? '#FFFFFF' : 'var(--text-secondary)',
-            fontWeight: 700,
-            fontSize: '0.75rem'
-          }}
-        >
-          <Map size={13} />
-          <span>Day Streets</span>
-        </button>
-
-        <button
-          onClick={() => setMapStyle('ESRI')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '6px 10px',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            background: mapStyle === 'ESRI' ? '#4285F4' : 'transparent',
-            color: mapStyle === 'ESRI' ? '#FFFFFF' : 'var(--text-secondary)',
-            fontWeight: 700,
-            fontSize: '0.75rem'
-          }}
-        >
-          <Layers size={13} />
-          <span>Esri World</span>
-        </button>
-      </div>
-
-      {/* 2. Floating "Re-Center on Route" Button */}
+      {/* 1. Google Maps Layers Toggle Thumbnail (Bottom-Left) */}
       <button
-        onClick={handleRecenter}
+        onClick={() => setMapStyle(mapStyle === 'DARK' ? 'VOYAGER' : 'DARK')}
+        title="Toggle Map Style (Night Navigation / Day Streets)"
         style={{
           position: 'absolute',
-          bottom: '80px',
-          right: '16px',
+          bottom: '24px',
+          left: '24px',
           zIndex: 500,
-          background: '#0F172A',
-          border: '2px solid #4285F4',
-          color: '#FFFFFF',
-          borderRadius: '999px',
-          padding: '8px 14px',
+          width: '56px',
+          height: '56px',
+          borderRadius: '10px',
+          background: mapStyle === 'DARK' ? '#181E29' : '#FFFFFF',
+          border: '2px solid #FFFFFF',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '3px',
+          padding: 0,
+          transition: 'transform 0.15s, box-shadow 0.15s'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+      >
+        <Layers size={20} color={mapStyle === 'DARK' ? '#00E5FF' : '#1A73E8'} />
+        <span style={{
+          fontSize: '10px',
+          fontWeight: 700,
+          color: mapStyle === 'DARK' ? '#FFFFFF' : '#3C4043',
+          fontFamily: 'Roboto, Arial, sans-serif'
+        }}>
+          Layers
+        </span>
+      </button>
+
+      <button
+        onClick={() => setMapStyle('ESRI')}
+        style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          fontSize: '0.78rem',
-          fontWeight: 800,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.6), 0 0 12px rgba(66, 133, 244, 0.4)',
-          cursor: 'pointer'
+          gap: '5px',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          border: 'none',
+          cursor: 'pointer',
+          background: mapStyle === 'ESRI' ? '#4285F4' : 'transparent',
+          color: mapStyle === 'ESRI' ? '#FFFFFF' : 'var(--text-secondary)',
+          fontWeight: 700,
+          fontSize: '0.75rem'
         }}
-        title="Snap map view back to current navigation route"
       >
-        <Compass size={15} color="#4285F4" />
-        <span>Re-Center Route</span>
+        <Layers size={13} />
+        <span>Esri World</span>
       </button>
     </div>
+
+      {/* 2. Floating "Re-Center on Route" Button */ }
+  <button
+    onClick={handleRecenter}
+    style={{
+      position: 'absolute',
+      bottom: '80px',
+      right: '16px',
+      zIndex: 500,
+      background: '#0F172A',
+      border: '2px solid #4285F4',
+      color: '#FFFFFF',
+      borderRadius: '999px',
+      padding: '8px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      fontSize: '0.78rem',
+      fontWeight: 800,
+      boxShadow: '0 4px 16px rgba(0,0,0,0.6), 0 0 12px rgba(66, 133, 244, 0.4)',
+      cursor: 'pointer'
+    }}
+    title="Snap map view back to current navigation route"
+  >
+    <Compass size={15} color="#4285F4" />
+    <span>Re-Center Route</span>
+  </button>
+    </div >
   )
 }

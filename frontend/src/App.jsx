@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import TacticalHeader from './components/TacticalHeader'
 import InteractiveMap from './components/InteractiveMap'
-import JourneyPlanner from './components/JourneyPlanner'
-import AudioRadarDrawer from './components/AudioRadarDrawer'
+import GoogleMapsSearchBar from './components/GoogleMapsSearchBar'
+import GoogleMapsDirectionsSidebar from './components/GoogleMapsDirectionsSidebar'
+import GoogleMapsMenuDrawer from './components/GoogleMapsMenuDrawer'
 import ReportModal from './components/ReportModal'
 import MunicipalPumpDashboard from './components/MunicipalPumpDashboard'
 import IncidentDetailModal from './components/IncidentDetailModal'
@@ -26,9 +26,15 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState('BLR') // 'BLR' | 'DEL' | 'BOM'
   const [allIncidents, setAllIncidents] = useState(MULTI_CITY_INCIDENTS)
   const [showPotholes, setShowPotholes] = useState(true)
-  const [audioRadarActive, setAudioRadarActive] = useState(true)
+  const [showTraffic, setShowTraffic] = useState(false)
+  const [audioRadarActive, setAudioRadarActive] = useState(false)
   const [userLocation, setUserLocation] = useState(null)
   const [isLocating, setIsLocating] = useState(false)
+
+  // Google Maps Style Navigation & Sidebar Modes
+  const [isDirectionsMode, setIsDirectionsMode] = useState(true) // Sidebar directions panel active
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)       // Can be toggled with < / > button
+  const [isMenuOpen, setIsMenuOpen] = useState(false)             // Hamburger menu drawer
 
   // Google Maps API Key State (from .env or localStorage)
   const [googleApiKey, setGoogleApiKey] = useState(() => {
@@ -141,7 +147,9 @@ export default function App() {
       (position) => {
         const userLat = position.coords.latitude
         const userLng = position.coords.longitude
-        setUserLocation({ lat: userLat, lng: userLng })
+        const newLoc = { lat: userLat, lng: userLng, name: 'Your location (Live GPS)' }
+        setUserLocation(newLoc)
+        setOrigin(newLoc)
 
         // Calculate closest supported metro
         const distToBlr = Math.hypot(userLat - 12.9716, userLng - 77.5946)
@@ -157,8 +165,7 @@ export default function App() {
       },
       (error) => {
         console.warn("Geolocation access denied or timed out:", error.message)
-        // Graceful fallback to Delhi for demo
-        setUserLocation({ lat: 28.6320, lng: 77.2280 })
+        setUserLocation({ lat: 28.6320, lng: 77.2280, name: 'Your location (Delhi NCR)' })
         setSelectedCity('DEL')
         setIsLocating(false)
       },
@@ -174,17 +181,26 @@ export default function App() {
   }
 
   const handleMapClick = (latlng) => {
-    const pointName = `📍 Custom Point (${latlng.lat.toFixed(3)}, ${latlng.lng.toFixed(3)})`
+    const pointName = `📍 Picked Location (${latlng.lat.toFixed(3)}, ${latlng.lng.toFixed(3)})`
     const newPoint = { lat: latlng.lat, lng: latlng.lng, name: pointName }
     if (pickingMode === 'ORIGIN') {
       setOrigin(newPoint)
     } else if (pickingMode === 'DESTINATION') {
       setDestination(newPoint)
+      setIsDirectionsMode(true)
+      setIsSidebarOpen(true)
     }
     setPickingMode(null)
   }
 
-  // 3. Add crowdsourced incident
+  // 3. User selects destination from search bar
+  const handleSearchSelectDestination = (dest) => {
+    setDestination(dest)
+    setIsDirectionsMode(true)
+    setIsSidebarOpen(true)
+  }
+
+  // 4. Add crowdsourced incident
   const handleAddIncident = (newIncident) => {
     setAllIncidents(prev => ({
       ...prev,
@@ -192,7 +208,7 @@ export default function App() {
     }))
   }
 
-  // 4. Dispatch de-watering pump unit
+  // 5. Dispatch de-watering pump unit
   const handleDispatchPump = (incidentId) => {
     setAllIncidents(prev => ({
       ...prev,
@@ -213,58 +229,25 @@ export default function App() {
 
   return (
     <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
       width: '100vw',
-      background: 'var(--bg-primary)',
+      height: '100vh',
       overflow: 'hidden',
-      position: 'relative'
+      position: 'relative',
+      margin: 0,
+      padding: 0,
+      background: '#E8EAED',
+      fontFamily: 'Roboto, Arial, sans-serif'
     }}>
-      {/* 1. Tactical Header with City Selector & Auto-Fetch GPS */}
-      <TacticalHeader
-        vehicle={vehicle}
-        setVehicle={setVehicle}
-        audioRadarActive={audioRadarActive}
-        setAudioRadarActive={setAudioRadarActive}
-        showPotholes={showPotholes}
-        setShowPotholes={setShowPotholes}
-        onOpenReportModal={() => setIsReportModalOpen(true)}
-        onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
-        activePumpTicketsCount={activePumpTicketsCount}
-        selectedCity={selectedCity}
-        setSelectedCity={setSelectedCity}
-        onAutoDetectLocation={handleAutoDetectLocation}
-        isLocating={isLocating}
-        googleApiKey={googleApiKey}
-        onOpenKeyModal={() => setIsKeyModalOpen(true)}
-      />
-
-      {/* 2. Interactive Tactical Map Canvas */}
-      <main style={{
-        flex: 1,
-        position: 'relative',
-        margin: '0 16px 16px 16px',
-        borderRadius: '14px',
-        overflow: 'hidden',
-        border: '1px solid var(--border-subtle)',
-        boxShadow: 'var(--shadow-tactical)'
+      {/* ============================================================== */}
+      {/* 1. FULLSCREEN MAP (100% WIDTH, 100% HEIGHT, EDGE-TO-EDGE)       */}
+      {/* ============================================================== */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: 1
       }}>
-        {/* Floating Google Navigation Journey Planner Pill */}
-        <JourneyPlanner
-          selectedCity={selectedCity}
-          origin={origin}
-          destination={destination}
-          onSelectOrigin={(pt) => setOrigin(pt)}
-          onSelectDestination={(pt) => setDestination(pt)}
-          onSwapPoints={handleSwapPoints}
-          pickingMode={pickingMode}
-          setPickingMode={setPickingMode}
-          vehicle={vehicle}
-          routeData={activeRouteData}
-          onAutoDetectLocation={handleAutoDetectLocation}
-        />
-
         <InteractiveMap
           selectedCity={selectedCity}
           incidents={currentIncidents}
@@ -278,23 +261,92 @@ export default function App() {
           onMapClick={handleMapClick}
           googleApiKey={googleApiKey}
         />
+      </div>
 
-        {/* 3. Hands-Free Audio Radar Overlay */}
-        <AudioRadarDrawer
-          active={audioRadarActive}
-          onClose={() => setAudioRadarActive(false)}
-          routeData={activeRouteData}
+      {/* ============================================================== */}
+      {/* 2. FLOATING TOP SEARCH BAR (When Directions Mode is Hidden)     */}
+      {/* ============================================================== */}
+      {(!isDirectionsMode || !isSidebarOpen) && (
+        <GoogleMapsSearchBar
+          selectedCity={selectedCity}
+          onOpenDirections={() => { setIsDirectionsMode(true); setIsSidebarOpen(true); }}
+          onSelectDestination={handleSearchSelectDestination}
+          onToggleMenu={() => setIsMenuOpen(true)}
+          vehicle={vehicle}
+          setVehicle={setVehicle}
+          showPotholes={showPotholes}
+          setShowPotholes={setShowPotholes}
+          audioRadarActive={audioRadarActive}
+          setAudioRadarActive={setAudioRadarActive}
+          showTraffic={showTraffic}
+          setShowTraffic={setShowTraffic}
+          onOpenReportModal={() => setIsReportModalOpen(true)}
         />
-      </main>
+      )}
 
-      {/* 4. Incident Reporting Modal */}
+      {/* ============================================================== */}
+      {/* 3. GOOGLE MAPS DIRECTIONS SIDEBAR (Collapsible, Full Features)  */}
+      {/* ============================================================== */}
+      {isDirectionsMode && (
+        <GoogleMapsDirectionsSidebar
+          isOpen={isSidebarOpen}
+          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          onCloseDirections={() => setIsDirectionsMode(false)}
+          origin={origin}
+          destination={destination}
+          onSelectOrigin={(pt) => setOrigin(pt)}
+          onSelectDestination={(pt) => setDestination(pt)}
+          onSwapPoints={handleSwapPoints}
+          onAutoDetectLocation={handleAutoDetectLocation}
+          vehicle={vehicle}
+          setVehicle={setVehicle}
+          routeData={activeRouteData}
+          selectedCity={selectedCity}
+          onOpenReportModal={() => setIsReportModalOpen(true)}
+          onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
+          activePumpTicketsCount={activePumpTicketsCount}
+          showPotholes={showPotholes}
+          setShowPotholes={setShowPotholes}
+          showTraffic={showTraffic}
+          setShowTraffic={setShowTraffic}
+          audioRadarActive={audioRadarActive}
+          setAudioRadarActive={setAudioRadarActive}
+          onPickOnMap={(mode) => setPickingMode(mode)}
+        />
+      )}
+
+      {/* ============================================================== */}
+      {/* 4. HAMBURGER MENU DRAWER (Google Maps Style)                   */}
+      {/* ============================================================== */}
+      <GoogleMapsMenuDrawer
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        selectedCity={selectedCity}
+        setSelectedCity={setSelectedCity}
+        showTraffic={showTraffic}
+        setShowTraffic={setShowTraffic}
+        showPotholes={showPotholes}
+        setShowPotholes={setShowPotholes}
+        audioRadarActive={audioRadarActive}
+        setAudioRadarActive={setAudioRadarActive}
+        onOpenReportModal={() => setIsReportModalOpen(true)}
+        onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
+        onOpenKeyModal={() => setIsKeyModalOpen(true)}
+        activePumpTicketsCount={activePumpTicketsCount}
+        googleApiKey={googleApiKey}
+      />
+
+      {/* ============================================================== */}
+      {/* 5. MODALS & DIALOGS (Report, Civic Pumps, Key Settings)         */}
+      {/* ============================================================== */}
       <ReportModal
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onAddIncident={handleAddIncident}
       />
 
-      {/* 5. Municipal Pump Command Center Slide-Over */}
       <MunicipalPumpDashboard
         isOpen={isCivicDashboardOpen}
         onClose={() => setIsCivicDashboardOpen(false)}
@@ -302,14 +354,12 @@ export default function App() {
         onDispatchPump={handleDispatchPump}
       />
 
-      {/* 6. Incident Telemetry Detail Modal */}
       <IncidentDetailModal
         incident={selectedIncident}
         onClose={() => setSelectedIncident(null)}
         onDispatchPump={handleDispatchPump}
       />
 
-      {/* 7. Google Maps API Key Modal */}
       <GoogleApiKeyModal
         isOpen={isKeyModalOpen}
         onClose={() => setIsKeyModalOpen(false)}
