@@ -333,7 +333,7 @@ export default function InteractiveMap({
     const routeLayer = routeLayerRef.current
     routeLayer.clearLayers()
 
-    const isDetourRequired = vehicle === 'BIKE' || vehicle === 'SEDAN'
+    const isDetourRequired = Boolean(activeRoute?.isDetourRequired)
 
     const effectiveOrigin = origin || activeRoute.origin
     const effectiveDest = destination || activeRoute.destination

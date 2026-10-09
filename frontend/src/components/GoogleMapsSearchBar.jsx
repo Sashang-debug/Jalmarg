@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Menu, Search, Navigation2, X, Bike, Car, Truck, Droplets, AlertTriangle, Volume2, TrafficCone } from 'lucide-react'
+import { Menu, Search, Navigation2, X, Bike, Car, Truck, Footprints, Droplets, AlertTriangle, Volume2, TrafficCone } from 'lucide-react'
 import { CITY_LANDMARKS, MULTI_CITY_INCIDENTS } from '../data/mockTelemetry'
 
 export default function GoogleMapsSearchBar({
@@ -382,6 +382,29 @@ export default function GoogleMapsSearchBar({
         >
           <Truck size={13} />
           <span>SUV (&lt;55cm)</span>
+        </button>
+
+        {/* Walking Mode */}
+        <button
+          onClick={() => { setVehicle('WALK'); onOpenDirections(); }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            background: vehicle === 'WALK' ? '#1A73E8' : '#FFFFFF',
+            color: vehicle === 'WALK' ? '#FFFFFF' : '#3C4043',
+            border: '1px solid rgba(0,0,0,0.12)',
+            borderRadius: '16px',
+            padding: '5px 12px',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <Footprints size={13} />
+          <span>Walk (&lt;15cm)</span>
         </button>
 
         {/* Potholes toggle chip */}

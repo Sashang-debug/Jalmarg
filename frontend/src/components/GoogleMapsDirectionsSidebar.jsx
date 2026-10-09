@@ -24,7 +24,7 @@ import {
   Clock,
   Sparkles
 } from 'lucide-react'
-import { CITY_LANDMARKS } from '../data/mockTelemetry'
+import { CITY_LANDMARKS, formatDuration } from '../data/mockTelemetry'
 
 export default function GoogleMapsDirectionsSidebar({
   isOpen,
@@ -95,7 +95,8 @@ export default function GoogleMapsDirectionsSidebar({
   const CLEARANCE_LIMITS = {
     BIKE: 20,
     SEDAN: 30,
-    SUV: 55
+    SUV: 55,
+    WALK: 15
   }
 
   const currentLimit = CLEARANCE_LIMITS[vehicle] || 20
@@ -166,7 +167,7 @@ export default function GoogleMapsDirectionsSidebar({
                 }}
               >
                 <Car size={18} />
-                <span>{routeData?.estTimeMins ? `${routeData.estTimeMins} min` : '14 min'}</span>
+                <span>{formatDuration(routeData?.timesByMode?.SEDAN ?? routeData?.estTimeMins ?? 12)}</span>
               </button>
 
               {/* 2-Wheeler Tab */}
@@ -185,11 +186,12 @@ export default function GoogleMapsDirectionsSidebar({
                   color: vehicle === 'BIKE' ? '#1A73E8' : '#5F6368',
                   cursor: 'pointer',
                   fontWeight: 600,
-                  fontSize: '11px'
+                  fontSize: '11px',
+                  transition: 'background 0.15s'
                 }}
               >
                 <Bike size={18} />
-                <span>{routeData?.estTimeMins ? `${routeData.estTimeMins + 2} min` : '18 min'}</span>
+                <span>{formatDuration(routeData?.timesByMode?.BIKE ?? (routeData?.estTimeMins ? routeData.estTimeMins + 2 : 14))}</span>
               </button>
 
               {/* SUV / Bus Tab */}
@@ -208,16 +210,18 @@ export default function GoogleMapsDirectionsSidebar({
                   color: vehicle === 'SUV' ? '#1A73E8' : '#5F6368',
                   cursor: 'pointer',
                   fontWeight: 600,
-                  fontSize: '11px'
+                  fontSize: '11px',
+                  transition: 'background 0.15s'
                 }}
               >
                 <Truck size={18} />
-                <span>{routeData?.estTimeMins ? `${Math.max(8, routeData.estTimeMins - 2)} min` : '12 min'}</span>
+                <span>{formatDuration(routeData?.timesByMode?.SUV ?? (routeData?.estTimeMins ? Math.max(8, routeData.estTimeMins - 2) : 10))}</span>
               </button>
 
               {/* Walking Tab */}
               <button
-                title="Walking (Flood caution)"
+                onClick={() => setVehicle('WALK')}
+                title="Walking (Flood caution: <15cm clearance)"
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -226,15 +230,16 @@ export default function GoogleMapsDirectionsSidebar({
                   padding: '6px 12px',
                   borderRadius: '8px',
                   border: 'none',
-                  background: 'transparent',
-                  color: '#70757A',
+                  background: vehicle === 'WALK' ? '#E8F0FE' : 'transparent',
+                  color: vehicle === 'WALK' ? '#1A73E8' : '#5F6368',
                   cursor: 'pointer',
                   fontWeight: 600,
-                  fontSize: '11px'
+                  fontSize: '11px',
+                  transition: 'background 0.15s'
                 }}
               >
                 <Footprints size={18} />
-                <span>1h 10m</span>
+                <span>{formatDuration(routeData?.timesByMode?.WALK ?? 70)}</span>
               </button>
             </div>
 
@@ -529,7 +534,7 @@ export default function GoogleMapsDirectionsSidebar({
 
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '18px', fontWeight: 700, color: routeData?.isDetourRequired ? '#1A73E8' : '#137333' }}>
-                  {routeData?.estTimeMins || 14} min
+                  {formatDuration(routeData?.estTimeMins || 14)}
                 </div>
                 <div style={{ fontSize: '12px', color: '#70757A' }}>
                   {routeData?.distanceKm || 5.2} km
@@ -624,7 +629,11 @@ export default function GoogleMapsDirectionsSidebar({
 
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '18px', fontWeight: 700, color: '#5F6368' }}>
-                  {(routeData?.estTimeMins || 14) + 6} min
+                  {formatDuration(
+                    vehicle === 'WALK'
+                      ? Math.round((routeData?.estTimeMins || 70) * 1.35)
+                      : (routeData?.estTimeMins || 14) + (vehicle === 'SUV' ? 4 : vehicle === 'BIKE' ? 7 : 6)
+                  )}
                 </div>
                 <div style={{ fontSize: '12px', color: '#70757A' }}>
                   {((routeData?.distanceKm || 5.2) + 1.8).toFixed(1)} km

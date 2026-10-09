@@ -338,6 +338,24 @@ function distanceToSegment(pLat, pLng, aLat, aLng, bLat, bLng) {
   return calculateHaversineDistance(pLat, pLng, projLat, projLng);
 }
 
+// Format duration helper (e.g. 14 min or 1h 10m)
+export function formatDuration(mins) {
+  if (mins === undefined || mins === null || isNaN(mins)) return '14 min';
+  const m = Math.round(mins);
+  if (m < 60) return `${m} min`;
+  const hrs = Math.floor(m / 60);
+  const remainingMins = m % 60;
+  return remainingMins > 0 ? `${hrs}h ${remainingMins}m` : `${hrs}h`;
+}
+
+// Vehicle clearance limits (in cm)
+export const VEHICLE_THRESHOLDS = {
+  BIKE: 20,
+  SEDAN: 30,
+  SUV: 55,
+  WALK: 15
+};
+
 // ==============================================================================
 // Dynamic Flood-Aware Routing Engine
 // Calculates safe flyover bypasses & clearance thresholds
@@ -399,17 +417,25 @@ export function calculateDynamicRoute(origin, destination, selectedCity, vehicle
     }
   });
 
-  // Vehicle clearance limits
-  const VEHICLE_THRESHOLDS = {
-    BIKE: 20,
-    SEDAN: 30,
-    SUV: 55
+  const hazardName = worstHazard ? worstHazard.roadName : "No Water Hazard";
+  const hazardDepth = worstHazard ? worstHazard.depthCm : 0;
+
+  const isBlockedSedan = hazardDepth >= VEHICLE_THRESHOLDS.SEDAN;
+  const isBlockedBike = hazardDepth >= VEHICLE_THRESHOLDS.BIKE;
+  const isBlockedSUV = hazardDepth >= VEHICLE_THRESHOLDS.SUV;
+  const isBlockedWalk = hazardDepth >= VEHICLE_THRESHOLDS.WALK;
+
+  const isBlockedByMode = {
+    SEDAN: isBlockedSedan,
+    BIKE: isBlockedBike,
+    SUV: isBlockedSUV,
+    WALK: isBlockedWalk
   };
 
   const limit = VEHICLE_THRESHOLDS[vehicle] || 20;
-  const isBlocked = worstHazard && worstHazard.depthCm >= limit;
+  const isBlocked = isBlockedByMode[vehicle] !== undefined ? isBlockedByMode[vehicle] : (worstHazard && worstHazard.depthCm >= limit);
 
-  // 3. Build Detour Path if blocked
+  // 3. Build Detour Path if blocked for the selected vehicle
   let detourPath = [];
   if (isBlocked && worstHazard) {
     if (resolvedRealRoute && resolvedRealRoute.detourPath && resolvedRealRoute.detourPath.length > 0) {
@@ -432,32 +458,64 @@ export function calculateDynamicRoute(origin, destination, selectedCity, vehicle
     detourPath = [...directPath];
   }
 
-  const directDistanceKm = (resolvedRealRoute && resolvedRealRoute.distanceKm)
-    ? resolvedRealRoute.distanceKm
+  // Base metrics from authentic road graph or haversine
+  const baseDirectDist = (resolvedRealRoute && (resolvedRealRoute.directDistanceKm || resolvedRealRoute.distanceKm))
+    ? (resolvedRealRoute.directDistanceKm || resolvedRealRoute.distanceKm)
     : Math.max(1.2, parseFloat(baseDistance.toFixed(1)));
-  const directTimeMins = (resolvedRealRoute && resolvedRealRoute.durationMins)
-    ? resolvedRealRoute.durationMins
-    : Math.max(4, Math.round(directDistanceKm * 2.4));
-  const detourDistanceKm = isBlocked ? parseFloat((directDistanceKm * 1.28).toFixed(1)) : directDistanceKm;
-  const detourTimeMins = isBlocked ? directTimeMins + 4 : directTimeMins;
+  const baseDetourDist = (resolvedRealRoute && (resolvedRealRoute.detourDistanceKm || resolvedRealRoute.distanceKm))
+    ? (resolvedRealRoute.detourDistanceKm || resolvedRealRoute.distanceKm)
+    : parseFloat((baseDirectDist * 1.28).toFixed(1));
 
-  const hazardName = worstHazard ? worstHazard.roadName : "No Water Hazard";
-  const hazardDepth = worstHazard ? worstHazard.depthCm : 0;
+  // Base driving duration (Sedan baseline in minutes)
+  const baseDirectMins = (resolvedRealRoute && (resolvedRealRoute.directDurationMins || resolvedRealRoute.durationMins))
+    ? (resolvedRealRoute.directDurationMins || resolvedRealRoute.durationMins)
+    : Math.max(4, Math.round(baseDirectDist * 2.2));
+  const baseDetourMins = (resolvedRealRoute && (resolvedRealRoute.detourDurationMins || resolvedRealRoute.durationMins))
+    ? Math.max(baseDirectMins + 3, (resolvedRealRoute.detourDurationMins || resolvedRealRoute.durationMins))
+    : baseDirectMins + 4;
+
+  // Transit times per mode based on ground-clearance & physical speed
+  const timesByMode = {
+    SEDAN: isBlockedSedan ? baseDetourMins : baseDirectMins,
+    BIKE: isBlockedBike 
+      ? Math.max(baseDetourMins + 2, Math.round(baseDetourMins * 1.18)) 
+      : Math.max(baseDirectMins + 2, Math.round(baseDirectMins * 1.15)),
+    SUV: isBlockedSUV 
+      ? Math.max(4, Math.round(baseDetourMins * 0.85)) 
+      : Math.max(3, Math.round(baseDirectMins * 0.90)),
+    WALK: isBlockedWalk 
+      ? Math.round(baseDetourDist * 13.3) 
+      : Math.round(baseDirectDist * 13.3)
+  };
+
+  const distancesByMode = {
+    SEDAN: isBlockedSedan ? baseDetourDist : baseDirectDist,
+    BIKE: isBlockedBike ? baseDetourDist : baseDirectDist,
+    SUV: isBlockedSUV ? baseDetourDist : baseDirectDist,
+    WALK: isBlockedWalk ? baseDetourDist : baseDirectDist
+  };
+
+  const currentEstTimeMins = timesByMode[vehicle] ?? (isBlocked ? baseDetourMins : baseDirectMins);
+  const currentDistanceKm = distancesByMode[vehicle] ?? (isBlocked ? baseDetourDist : baseDirectDist);
 
   // Dynamic Audio Radar Alerts
   let speechHindi = "";
   let speechEnglish = "";
+  const vehicleLabelHindi = vehicle === 'BIKE' ? 'बाइक' : vehicle === 'SUV' ? 'एसयूवी' : vehicle === 'WALK' ? 'पैदल यात्रियों' : 'कार';
+  const vehicleLabelEng = vehicle === 'BIKE' ? 'Two-wheeler' : vehicle === 'SUV' ? 'SUV' : vehicle === 'WALK' ? 'Pedestrians' : 'Car';
 
   if (isBlocked) {
-    speechHindi = `सावधान! ${hazardName} पर ${hazardDepth} सेंटीमीटर पानी भरा है। बाइक के लिए तुरंत फ्लाइओवर वाला रास्ता लें।`;
-    speechEnglish = `Caution! Severe waterlogging of ${hazardDepth} cm at ${hazardName}. Diverting via safe elevated bypass.`;
+    speechHindi = `सावधान! ${hazardName} पर ${hazardDepth} सेंटीमीटर पानी भरा है। ${vehicleLabelHindi} के लिए तुरंत सुरक्षित बाईपास वाला रास्ता लें।`;
+    speechEnglish = `Caution! Severe waterlogging of ${hazardDepth} cm at ${hazardName} exceeds ${vehicleLabelEng} limit (${limit} cm). Diverting via safe elevated bypass.`;
   } else if (hazardDepth > 0) {
-    speechHindi = `मार्ग खुला है। ${hazardName} पर पानी ${hazardDepth} सेमी है। वाहन धीमी गति से निकालें।`;
-    speechEnglish = `Route open. Minor waterlogging of ${hazardDepth} cm detected at ${hazardName}. Proceed with caution.`;
+    speechHindi = `मार्ग खुला है। ${hazardName} पर पानी ${hazardDepth} सेमी है। ${vehicleLabelHindi} सावधानी से निकालें।`;
+    speechEnglish = `Route open. Minor waterlogging of ${hazardDepth} cm detected at ${hazardName}. Passable for ${vehicleLabelEng} within ${limit} cm threshold.`;
   } else {
     speechHindi = `मार्ग पूरी तरह सूखा और सुरक्षित है। कोई जलभराव नहीं है।`;
     speechEnglish = `Route is completely clear and dry. Safe journey.`;
   }
+
+  const detourExtraMins = Math.max(2, currentEstTimeMins - (vehicle === 'SUV' ? Math.max(3, Math.round(baseDirectMins * 0.9)) : vehicle === 'BIKE' ? Math.max(baseDirectMins + 2, Math.round(baseDirectMins * 1.15)) : vehicle === 'WALK' ? Math.round(baseDirectDist * 13.3) : baseDirectMins));
 
   return {
     origin,
@@ -467,15 +525,18 @@ export function calculateDynamicRoute(origin, destination, selectedCity, vehicle
     directPath,
     detourPath,
     isDetourRequired: isBlocked,
-    distanceKm: isBlocked ? detourDistanceKm : directDistanceKm,
-    estTimeMins: isBlocked ? detourTimeMins : directTimeMins,
+    distanceKm: currentDistanceKm,
+    estTimeMins: currentEstTimeMins,
+    timesByMode,
+    distancesByMode,
+    isBlockedByMode,
     avoidedDepth: isBlocked ? hazardDepth : 0,
     speechHindi,
     speechEnglish,
     advisoryText: isBlocked
-      ? `Water at ${hazardName} is ${hazardDepth} cm deep (exceeds ${vehicle} safe limit of ${limit} cm). Diverting via elevated flyover bypass (+4 mins).`
+      ? `Water at ${hazardName} is ${hazardDepth} cm deep (exceeds ${vehicle} safe limit of ${limit} cm). Diverting via elevated flyover bypass (+${detourExtraMins} mins).`
       : hazardDepth > 0
-      ? `Water at ${hazardName} is ${hazardDepth} cm deep. Passable for ${vehicle} within safe threshold.`
+      ? `Water at ${hazardName} is ${hazardDepth} cm deep. Passable for ${vehicle} within safe threshold (${limit} cm). Direct transit verified.`
       : `Direct corridor clear of flood hazards. Normal dry transit.`
   };
 }

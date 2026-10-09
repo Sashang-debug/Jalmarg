@@ -10,7 +10,8 @@ const routeCache = new Map();
 export const VEHICLE_THRESHOLDS = {
   BIKE: 20,
   SEDAN: 30,
-  SUV: 55
+  SUV: 55,
+  WALK: 15
 };
 
 // Calculate Haversine distance in kilometers

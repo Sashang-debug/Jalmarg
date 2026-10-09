@@ -107,7 +107,11 @@ export default function App() {
       if (!isCancelled) {
         setRealRoadRoute({
           directPath: direct.path,
+          directDistanceKm: direct.distanceKm,
+          directDurationMins: direct.durationMins,
           detourPath: detour ? detour.path : direct.path,
+          detourDistanceKm: detour ? detour.distanceKm : direct.distanceKm,
+          detourDurationMins: detour ? detour.durationMins : direct.durationMins,
           distanceKm: detour ? detour.distanceKm : direct.distanceKm,
           durationMins: detour ? detour.durationMins : direct.durationMins
         })
