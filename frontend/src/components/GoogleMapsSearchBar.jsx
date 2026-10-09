@@ -21,9 +21,46 @@ export default function GoogleMapsSearchBar({
   const [isFocused, setIsFocused] = useState(false)
   const [suggestions, setSuggestions] = useState([])
   const inputRef = useRef(null)
+  const containerRef = useRef(null)
 
   const landmarks = CITY_LANDMARKS[selectedCity] || []
   const incidents = MULTI_CITY_INCIDENTS[selectedCity] || []
+
+  // Close suggestions dropdown when clicking anywhere outside (using capture phase so Google Maps canvas cannot swallow event)
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsFocused(false)
+        if (inputRef.current) {
+          inputRef.current.blur()
+        }
+      }
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        setIsFocused(false)
+        if (inputRef.current) {
+          inputRef.current.blur()
+        }
+      }
+    }
+
+    // Capture phase (true) intercepts events before Google Maps / Leaflet can call stopPropagation()
+    window.addEventListener('mousedown', handleClickOutside, true)
+    window.addEventListener('pointerdown', handleClickOutside, true)
+    window.addEventListener('touchstart', handleClickOutside, true)
+    window.addEventListener('click', handleClickOutside, true)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside, true)
+      window.removeEventListener('pointerdown', handleClickOutside, true)
+      window.removeEventListener('touchstart', handleClickOutside, true)
+      window.removeEventListener('click', handleClickOutside, true)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
 
   // Filter landmarks and incidents as user types
   useEffect(() => {
@@ -49,6 +86,7 @@ export default function GoogleMapsSearchBar({
   }
 
   const handleDirectionsClick = () => {
+    setIsFocused(false)
     if (query.trim() && suggestions.length > 0) {
       handleSelect(suggestions[0])
     } else {
@@ -57,16 +95,19 @@ export default function GoogleMapsSearchBar({
   }
 
   return (
-    <div style={{
-      position: 'absolute',
-      top: '16px',
-      left: '16px',
-      zIndex: 900,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-      pointerEvents: 'auto'
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        position: 'absolute',
+        top: '16px',
+        left: '16px',
+        zIndex: 900,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        pointerEvents: 'auto'
+      }}
+    >
       {/* 1. Google Maps Search Pill */}
       <div style={{
         width: '392px',

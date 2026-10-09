@@ -32,7 +32,6 @@ export default function App() {
   const [isLocating, setIsLocating] = useState(false)
 
   // Google Maps Style Navigation & Sidebar Modes
-  const [isDirectionsMode, setIsDirectionsMode] = useState(true) // Sidebar directions panel active
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)       // Can be toggled with < / > button
   const [isMenuOpen, setIsMenuOpen] = useState(false)             // Hamburger menu drawer
 
@@ -59,10 +58,13 @@ export default function App() {
   const currentIncidents = allIncidents[selectedCity] || []
   const currentPotholes = MULTI_CITY_POTHOLES[selectedCity] || []
 
-  // Auto-reset default corridor when city changes
+  // Auto-reset corridor when city changes, preserving user live GPS origin if active
   useEffect(() => {
     const cityRoute = MULTI_CITY_ROUTES[selectedCity] || MULTI_CITY_ROUTES.BLR
-    setOrigin(cityRoute.origin)
+    setOrigin(prev => {
+      if (prev && prev.name && prev.name.includes('Your location')) return prev
+      return cityRoute.origin
+    })
     setDestination(cityRoute.destination)
     setPickingMode(null)
     setRealRoadRoute(null)
@@ -135,10 +137,10 @@ export default function App() {
     }
   }
 
-  // 1. Auto-Fetch GPS Location feature
+  // 1. Auto-Fetch GPS Location on Initial Site Load (Fixes Bug 3)
   const handleAutoDetectLocation = () => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.")
+      console.warn("Geolocation is not supported by your browser.")
       return
     }
 
@@ -165,13 +167,15 @@ export default function App() {
       },
       (error) => {
         console.warn("Geolocation access denied or timed out:", error.message)
-        setUserLocation({ lat: 28.6320, lng: 77.2280, name: 'Your location (Delhi NCR)' })
-        setSelectedCity('DEL')
         setIsLocating(false)
       },
-      { timeout: 8000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 60000 }
     )
   }
+
+  useEffect(() => {
+    handleAutoDetectLocation()
+  }, [])
 
   // 2. Point Swap and Map Click Handlers
   const handleSwapPoints = () => {
@@ -187,7 +191,6 @@ export default function App() {
       setOrigin(newPoint)
     } else if (pickingMode === 'DESTINATION') {
       setDestination(newPoint)
-      setIsDirectionsMode(true)
       setIsSidebarOpen(true)
     }
     setPickingMode(null)
@@ -196,7 +199,6 @@ export default function App() {
   // 3. User selects destination from search bar
   const handleSearchSelectDestination = (dest) => {
     setDestination(dest)
-    setIsDirectionsMode(true)
     setIsSidebarOpen(true)
   }
 
@@ -264,12 +266,12 @@ export default function App() {
       </div>
 
       {/* ============================================================== */}
-      {/* 2. FLOATING TOP SEARCH BAR (When Directions Mode is Hidden)     */}
+      {/* 2. FLOATING TOP SEARCH BAR (When Sidebar is Collapsed)          */}
       {/* ============================================================== */}
-      {(!isDirectionsMode || !isSidebarOpen) && (
+      {!isSidebarOpen && (
         <GoogleMapsSearchBar
           selectedCity={selectedCity}
-          onOpenDirections={() => { setIsDirectionsMode(true); setIsSidebarOpen(true); }}
+          onOpenDirections={() => setIsSidebarOpen(true)}
           onSelectDestination={handleSearchSelectDestination}
           onToggleMenu={() => setIsMenuOpen(true)}
           vehicle={vehicle}
@@ -285,35 +287,33 @@ export default function App() {
       )}
 
       {/* ============================================================== */}
-      {/* 3. GOOGLE MAPS DIRECTIONS SIDEBAR (Collapsible, Full Features)  */}
+      {/* 3. GOOGLE MAPS DIRECTIONS SIDEBAR (Always Mounted, Collapsible) */}
       {/* ============================================================== */}
-      {isDirectionsMode && (
-        <GoogleMapsDirectionsSidebar
-          isOpen={isSidebarOpen}
-          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          onCloseDirections={() => setIsDirectionsMode(false)}
-          origin={origin}
-          destination={destination}
-          onSelectOrigin={(pt) => setOrigin(pt)}
-          onSelectDestination={(pt) => setDestination(pt)}
-          onSwapPoints={handleSwapPoints}
-          onAutoDetectLocation={handleAutoDetectLocation}
-          vehicle={vehicle}
-          setVehicle={setVehicle}
-          routeData={activeRouteData}
-          selectedCity={selectedCity}
-          onOpenReportModal={() => setIsReportModalOpen(true)}
-          onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
-          activePumpTicketsCount={activePumpTicketsCount}
-          showPotholes={showPotholes}
-          setShowPotholes={setShowPotholes}
-          showTraffic={showTraffic}
-          setShowTraffic={setShowTraffic}
-          audioRadarActive={audioRadarActive}
-          setAudioRadarActive={setAudioRadarActive}
-          onPickOnMap={(mode) => setPickingMode(mode)}
-        />
-      )}
+      <GoogleMapsDirectionsSidebar
+        isOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
+        onCloseDirections={() => setIsSidebarOpen(false)}
+        origin={origin}
+        destination={destination}
+        onSelectOrigin={(pt) => setOrigin(pt)}
+        onSelectDestination={(pt) => setDestination(pt)}
+        onSwapPoints={handleSwapPoints}
+        onAutoDetectLocation={handleAutoDetectLocation}
+        vehicle={vehicle}
+        setVehicle={setVehicle}
+        routeData={activeRouteData}
+        selectedCity={selectedCity}
+        onOpenReportModal={() => setIsReportModalOpen(true)}
+        onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
+        activePumpTicketsCount={activePumpTicketsCount}
+        showPotholes={showPotholes}
+        setShowPotholes={setShowPotholes}
+        showTraffic={showTraffic}
+        setShowTraffic={setShowTraffic}
+        audioRadarActive={audioRadarActive}
+        setAudioRadarActive={setAudioRadarActive}
+        onPickOnMap={(mode) => setPickingMode(mode)}
+      />
 
       {/* ============================================================== */}
       {/* 4. HAMBURGER MENU DRAWER (Google Maps Style)                   */}
@@ -322,7 +322,7 @@ export default function App() {
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
         isSidebarOpen={isSidebarOpen}
-        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
         selectedCity={selectedCity}
         setSelectedCity={setSelectedCity}
         showTraffic={showTraffic}

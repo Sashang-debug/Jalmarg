@@ -180,8 +180,26 @@ For **every single feature or component**, the agent must strictly execute in th
 
 ---
 
-## 6. Current Status & Next Immediate Action
+## 6. UI & Google Maps Bug Fixes & Refinements
 
-* **Current State:** **Phase 4 Complete & Enhanced with Official Google Maps UI.** Edge-to-edge full-screen map, collapsible directions sidebar with toggle handle, floating search bar, and slide-out menu drawer active.
+* **Sidebar Toggle Reliability (Bug 1 Fixed):** 
+  - Resolved unmounting issue where closing or toggling the sidebar removed the floating `< / >` chevron handle.
+  - Sidebar is now persistently mounted with smooth CSS `translateX` animation, with the toggle handle permanently accessible at `left: isSidebarOpen ? '408px' : '0px'`.
+  - Synced state bidirectionally across the chevron handle, the `✕` close button, the hamburger menu drawer "Show side bar" toggle switch, and the floating search bar directions triggers.
+* **Dropdown Click-Outside Dismissal (Bug 2 Fixed):**
+  - Resolved Google Maps / Leaflet canvas DOM event trapping where internal `stopPropagation()` prevented bubbling to `document`.
+  - Added capture-phase (`useCapture: true`) window event listeners for `pointerdown`, `mousedown`, `touchstart`, and `click` on `GoogleMapsSearchBar` and `GoogleMapsDirectionsSidebar`.
+  - Added Escape key handler and input blur on outside clicks.
+* **Live GPS Location on Initial Site Load (Bug 3 Fixed):**
+  - Added `useEffect` in `App.jsx` to trigger `handleAutoDetectLocation()` automatically on mount.
+  - Implemented authentic Google Maps pulsing live GPS beacon (`gmaps-pulse` keyframe animation with vibrant `#1A73E8` core, white ring, and "Your location" badge).
+  - Ensured `GoogleMapEngine` and `InteractiveMap` prioritize and maintain focus on `userLocation` without being overridden by default city resets.
+
+---
+
+## 7. Current Status & Next Immediate Action
+
+* **Current State:** **Phase 4 Complete & Enhanced with Official Google Maps UI.** Edge-to-edge full-screen map, collapsible directions sidebar with persistent toggle handle, floating search bar with auto-dismissing dropdowns, live GPS auto-detection on load, and slide-out menu drawer active.
 * **Next Immediate Task:** Proceed to **Phase 5: Observability, Packaging & Pitch Polish** (Amazon CloudWatch dashboard metrics, AWS X-Ray service tracing map, and pitch presentation polish).
+
 

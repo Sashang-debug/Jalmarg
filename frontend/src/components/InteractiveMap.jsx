@@ -97,9 +97,9 @@ export default function InteractiveMap({
     }
   }, [])
 
-  // 2. City Fly-To Transition when selectedCity changes
+  // 2. City Fly-To Transition when selectedCity changes (only when userLocation is NOT active)
   useEffect(() => {
-    if (!mapInstanceRef.current) return
+    if (!mapInstanceRef.current || userLocation?.lat) return
 
     const cityConfig = CITY_CONFIGS[selectedCity]
     if (cityConfig) {

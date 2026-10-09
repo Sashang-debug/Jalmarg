@@ -53,9 +53,12 @@ export default function GoogleMapEngine({
 
         const { Map, TrafficLayer } = mapsLib
         const cityConfig = CITY_CONFIGS[selectedCity] || CITY_CONFIGS.BLR
+        const initialCenter = (userLocation && userLocation.lat)
+          ? { lat: userLocation.lat, lng: userLocation.lng }
+          : { lat: cityConfig.center[0], lng: cityConfig.center[1] }
         const map = new Map(mapContainerRef.current, {
-          center: { lat: cityConfig.center[0], lng: cityConfig.center[1] },
-          zoom: cityConfig.zoom,
+          center: initialCenter,
+          zoom: userLocation?.lat ? 15 : cityConfig.zoom,
           styles: mapStyleType === 'DARK' ? GOOGLE_MAPS_DARK_STYLE : null,
           disableDefaultUI: true,
           zoomControl: true,
@@ -100,15 +103,24 @@ export default function GoogleMapEngine({
     }
   }, [apiKey])
 
-  // 2. City Fly-To Transition
+  // 2. City Fly-To Transition (only when userLocation is NOT active)
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google) return
-    const cityConfig = CITY_CONFIGS[selectedCity]
-    if (cityConfig) {
-      mapInstanceRef.current.panTo({ lat: cityConfig.center[0], lng: cityConfig.center[1] })
-      mapInstanceRef.current.setZoom(cityConfig.zoom)
+    if (!userLocation?.lat) {
+      const cityConfig = CITY_CONFIGS[selectedCity]
+      if (cityConfig) {
+        mapInstanceRef.current.panTo({ lat: cityConfig.center[0], lng: cityConfig.center[1] })
+        mapInstanceRef.current.setZoom(cityConfig.zoom)
+      }
     }
   }, [selectedCity])
+
+  // 2b. User Location Pan/Center on site load or location change
+  useEffect(() => {
+    if (!mapInstanceRef.current || !window.google || !userLocation?.lat) return
+    mapInstanceRef.current.panTo({ lat: userLocation.lat, lng: userLocation.lng })
+    mapInstanceRef.current.setZoom(15)
+  }, [userLocation])
 
   // 3. Traffic Layer Toggle
   useEffect(() => {
@@ -260,24 +272,58 @@ export default function GoogleMapEngine({
       })
     }
 
-    // C. User Location Marker
+    // C. User Location Marker (Signature Google Maps Live Pulsing Beacon)
     if (userLocation && userLocation.lat && userLocation.lng) {
       const html = `
-        <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;">
+        <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 48px; height: 48px;">
+          <!-- Google Pulsing Halo Ring -->
           <div style="
-            width: 16px;
-            height: 16px;
+            position: absolute;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
-            background: #00E5FF;
-            border: 3px solid #FFFFFF;
-            box-shadow: 0 0 15px #00E5FF;
+            background: rgba(66, 133, 244, 0.35);
+            animation: gmaps-pulse 2s infinite ease-out;
           "></div>
+          <!-- Google Core Location Dot -->
+          <div style="
+            position: relative;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #1A73E8;
+            border: 3px solid #FFFFFF;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            z-index: 2;
+          "></div>
+          <!-- Label Badge -->
+          <div style="
+            position: absolute;
+            bottom: -16px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #1A73E8;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+            white-space: nowrap;
+            z-index: 3;
+            pointer-events: none;
+            font-family: Roboto, Arial, sans-serif;
+          ">
+            Your location
+          </div>
         </div>
       `
       const overlay = new CustomHtmlOverlay(
         new window.google.maps.LatLng(userLocation.lat, userLocation.lng),
         html,
-        () => {}
+        () => {
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.panTo({ lat: userLocation.lat, lng: userLocation.lng })
+          }
+        }
       )
       overlay.setMap(mapInstanceRef.current)
       overlaysRef.current.push(overlay)

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { 
   ArrowLeft, 
   ArrowUpDown, 
@@ -56,8 +56,40 @@ export default function GoogleMapsDirectionsSidebar({
   const [destSearch, setDestSearch] = useState('')
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0)
   const [showSteps, setShowSteps] = useState(false)
+  const inputsSectionRef = useRef(null)
 
   const landmarks = CITY_LANDMARKS[selectedCity] || []
+
+  // Close origin/destination dropdown when clicking anywhere outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (inputsSectionRef.current && !inputsSectionRef.current.contains(e.target)) {
+        setActiveInput(null)
+      }
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        setActiveInput(null)
+      }
+    }
+
+    if (activeInput) {
+      window.addEventListener('mousedown', handleClickOutside, true)
+      window.addEventListener('pointerdown', handleClickOutside, true)
+      window.addEventListener('touchstart', handleClickOutside, true)
+      window.addEventListener('click', handleClickOutside, true)
+      window.addEventListener('keydown', handleKeyDown)
+    }
+
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside, true)
+      window.removeEventListener('pointerdown', handleClickOutside, true)
+      window.removeEventListener('touchstart', handleClickOutside, true)
+      window.removeEventListener('click', handleClickOutside, true)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [activeInput])
 
   // Clearance limits
   const CLEARANCE_LIMITS = {
@@ -231,12 +263,13 @@ export default function GoogleMapsDirectionsSidebar({
           </div>
 
           {/* Input Cards Section (Google Maps Dotted Flow) */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            position: 'relative',
-            gap: '8px'
-          }}>
+          <div ref={inputsSectionRef} style={{ position: 'relative' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              position: 'relative',
+              gap: '8px'
+            }}>
             {/* Visual Dotted Timeline Connector */}
             <div style={{
               display: 'flex',
@@ -416,6 +449,7 @@ export default function GoogleMapsDirectionsSidebar({
               ))}
             </div>
           )}
+          </div>
         </div>
 
         {/* 2. Scrollable Body: Route Options & Flood Advisory Cards */}
@@ -650,7 +684,10 @@ export default function GoogleMapsDirectionsSidebar({
 
       {/* 2. Floating Sidebar Toggle Handle Button (< / >) */}
       <button
-        onClick={onToggleSidebar}
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggleSidebar()
+        }}
         title={isOpen ? "Collapse side bar" : "Show side bar"}
         style={{
           position: 'absolute',
