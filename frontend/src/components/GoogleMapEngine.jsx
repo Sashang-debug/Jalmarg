@@ -1,89 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Loader } from '@googlemaps/js-api-loader'
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
 import { Layers, TrafficCone, Compass, AlertTriangle, ShieldCheck } from 'lucide-react'
 import { CITY_CONFIGS } from '../data/mockTelemetry'
+import { GOOGLE_MAPS_DARK_STYLE } from '../utils/googleMapsStyles'
 
-// Official Google Maps Dark Tactical Navigation Palette
-export const GOOGLE_MAPS_DARK_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#181e29" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#181e29" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8a9ba8" }] },
-  {
-    featureType: "administrative.locality",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#d5e1df" }]
-  },
-  {
-    featureType: "poi",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#9ca5b3" }]
-  },
-  {
-    featureType: "poi.park",
-    elementType: "geometry",
-    stylers: [{ color: "#132128" }]
-  },
-  {
-    featureType: "poi.park",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#6b9a76" }]
-  },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#252e3d" }]
-  },
-  {
-    featureType: "road",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#1b222c" }]
-  },
-  {
-    featureType: "road",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#9ca5b3" }]
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#374559" }]
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#1f2733" }]
-  },
-  {
-    featureType: "road.highway",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#00E5FF" }]
-  },
-  {
-    featureType: "transit",
-    elementType: "geometry",
-    stylers: [{ color: "#2f3948" }]
-  },
-  {
-    featureType: "transit.station",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#d5e1df" }]
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#0a1322" }]
-  },
-  {
-    featureType: "water",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#38bdf8" }]
-  },
-  {
-    featureType: "water",
-    elementType: "labels.text.stroke",
-    stylers: [{ color: "#0a1322" }]
-  }
-]
+let hasConfiguredGoogleOptions = false
 
 export default function GoogleMapEngine({
   apiKey,
@@ -110,30 +31,36 @@ export default function GoogleMapEngine({
   const [showTraffic, setShowTraffic] = useState(false)
   const [mapStyleType, setMapStyleType] = useState('DARK') // 'DARK' | 'DEFAULT'
 
-  // 1. Initialize Google Maps via JS API Loader
+  // 1. Initialize Google Maps via modern functional importLibrary API
   useEffect(() => {
     if (!apiKey || mapInstanceRef.current) return
 
-    const loader = new Loader({
-      apiKey,
-      version: 'weekly',
-      libraries: ['places', 'geometry']
-    })
+    if (!hasConfiguredGoogleOptions) {
+      setOptions({
+        key: apiKey,
+        v: 'weekly'
+      })
+      hasConfiguredGoogleOptions = true
+    }
 
-    loader
-      .load()
-      .then((google) => {
+    Promise.all([
+      importLibrary('maps'),
+      importLibrary('places'),
+      importLibrary('geometry')
+    ])
+      .then(([mapsLib]) => {
         if (!mapContainerRef.current) return
 
+        const { Map, TrafficLayer } = mapsLib
         const cityConfig = CITY_CONFIGS[selectedCity] || CITY_CONFIGS.BLR
-        const map = new google.maps.Map(mapContainerRef.current, {
+        const map = new Map(mapContainerRef.current, {
           center: { lat: cityConfig.center[0], lng: cityConfig.center[1] },
           zoom: cityConfig.zoom,
           styles: mapStyleType === 'DARK' ? GOOGLE_MAPS_DARK_STYLE : null,
           disableDefaultUI: true,
           zoomControl: true,
           zoomControlOptions: {
-            position: google.maps.ControlPosition.RIGHT_BOTTOM
+            position: window.google.maps.ControlPosition.RIGHT_BOTTOM
           },
           mapTypeControl: false,
           streetViewControl: false,
@@ -141,7 +68,7 @@ export default function GoogleMapEngine({
         })
 
         // Setup Traffic Layer
-        const trafficLayer = new google.maps.TrafficLayer()
+        const trafficLayer = new TrafficLayer()
         trafficLayerRef.current = trafficLayer
 
         // Click handler for picking origin/destination
@@ -530,6 +457,41 @@ export default function GoogleMapEngine({
           <span>{mapStyleType === 'DARK' ? 'NIGHT COCKPIT' : 'DAY STREETS'}</span>
         </button>
       </div>
+
+      {/* Floating Re-Center Button */}
+      <button
+        onClick={() => {
+          if (!mapInstanceRef.current || !activeRoute || !window.google) return
+          const bounds = new window.google.maps.LatLngBounds()
+          const pts = activeRoute.isDetourRequired ? activeRoute.detourPath : activeRoute.directPath
+          if (pts && pts.length > 0) {
+            pts.forEach(p => bounds.extend({ lat: p[0], lng: p[1] }))
+            mapInstanceRef.current.fitBounds(bounds, 50)
+          }
+        }}
+        style={{
+          position: 'absolute',
+          bottom: '80px',
+          right: '16px',
+          zIndex: 500,
+          background: '#0F172A',
+          border: '2px solid #4285F4',
+          color: '#FFFFFF',
+          borderRadius: '999px',
+          padding: '8px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontSize: '0.78rem',
+          fontWeight: 800,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.6), 0 0 12px rgba(66, 133, 244, 0.4)',
+          cursor: 'pointer'
+        }}
+        title="Snap map view back to current navigation route"
+      >
+        <Compass size={15} color="#4285F4" />
+        <span>Re-Center Route</span>
+      </button>
     </div>
   )
 }
