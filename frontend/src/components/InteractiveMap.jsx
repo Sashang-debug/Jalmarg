@@ -569,53 +569,32 @@ export default function InteractiveMap({
         </span>
       </button>
 
+      {/* 2. Floating "Re-Center on Route" Button */}
       <button
-        onClick={() => setMapStyle('ESRI')}
+        onClick={handleRecenter}
         style={{
+          position: 'absolute',
+          bottom: '80px',
+          right: '16px',
+          zIndex: 500,
+          background: '#0F172A',
+          border: '2px solid #4285F4',
+          color: '#FFFFFF',
+          borderRadius: '999px',
+          padding: '8px 14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '5px',
-          padding: '6px 10px',
-          borderRadius: '6px',
-          border: 'none',
-          cursor: 'pointer',
-          background: mapStyle === 'ESRI' ? '#4285F4' : 'transparent',
-          color: mapStyle === 'ESRI' ? '#FFFFFF' : 'var(--text-secondary)',
-          fontWeight: 700,
-          fontSize: '0.75rem'
+          gap: '6px',
+          fontSize: '0.78rem',
+          fontWeight: 800,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.6), 0 0 12px rgba(66, 133, 244, 0.4)',
+          cursor: 'pointer'
         }}
+        title="Snap map view back to current navigation route"
       >
-        <Layers size={13} />
-        <span>Esri World</span>
+        <Compass size={15} color="#4285F4" />
+        <span>Re-Center Route</span>
       </button>
     </div>
-
-      {/* 2. Floating "Re-Center on Route" Button */ }
-  <button
-    onClick={handleRecenter}
-    style={{
-      position: 'absolute',
-      bottom: '80px',
-      right: '16px',
-      zIndex: 500,
-      background: '#0F172A',
-      border: '2px solid #4285F4',
-      color: '#FFFFFF',
-      borderRadius: '999px',
-      padding: '8px 14px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '6px',
-      fontSize: '0.78rem',
-      fontWeight: 800,
-      boxShadow: '0 4px 16px rgba(0,0,0,0.6), 0 0 12px rgba(66, 133, 244, 0.4)',
-      cursor: 'pointer'
-    }}
-    title="Snap map view back to current navigation route"
-  >
-    <Compass size={15} color="#4285F4" />
-    <span>Re-Center Route</span>
-  </button>
-    </div >
   )
 }
