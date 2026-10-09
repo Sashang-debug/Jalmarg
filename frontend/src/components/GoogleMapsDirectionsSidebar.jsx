@@ -279,12 +279,13 @@ export default function GoogleMapsDirectionsSidebar({
               paddingTop: '8px'
             }}>
               <div style={{
-                width: '10px',
-                height: '10px',
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
-                border: '2px solid #5F6368',
-                background: '#FFFFFF'
-              }} />
+                border: '2.5px solid #188038',
+                background: '#E6F4EA',
+                boxShadow: '0 0 6px rgba(24,128,56,0.3)'
+              }} title="Source / Starting Point (A)" />
               <div style={{
                 width: '2px',
                 height: '24px',
@@ -292,55 +293,63 @@ export default function GoogleMapsDirectionsSidebar({
                 margin: '2px 0'
               }} />
               <div style={{
-                width: '10px',
-                height: '10px',
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
-                background: '#D93025'
-              }} />
+                border: '2px solid #FFFFFF',
+                background: '#D93025',
+                boxShadow: '0 0 6px rgba(217,48,37,0.4)'
+              }} title="Destination / End Point (B)" />
             </div>
 
             {/* Origin & Destination Input Boxes */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {/* Origin Input */}
+              {/* Origin Input (Source) */}
               <div
                 onClick={() => setActiveInput(activeInput === 'ORIGIN' ? null : 'ORIGIN')}
                 style={{
-                  background: activeInput === 'ORIGIN' ? '#E8F0FE' : '#F1F3F4',
+                  background: activeInput === 'ORIGIN' ? '#E8F0FE' : '#F8F9FA',
                   borderRadius: '8px',
                   padding: '7px 12px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   cursor: 'pointer',
-                  border: activeInput === 'ORIGIN' ? '1.5px solid #1A73E8' : '1px solid transparent'
+                  border: activeInput === 'ORIGIN' ? '1.5px solid #188038' : '1px solid #E8EAED'
                 }}
               >
                 <div style={{ overflow: 'hidden', flex: 1 }}>
-                  <div style={{ fontSize: '11px', color: '#70757A', fontWeight: 600 }}>CHOOSE STARTING POINT</div>
-                  <div style={{ fontSize: '14px', fontWeight: 500, color: '#202124', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                  <div style={{ fontSize: '10.5px', color: '#137333', fontWeight: 700, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#188038' }}></span>
+                    <span>SOURCE / STARTING POINT (A)</span>
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#202124', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', marginTop: '1px' }}>
                     {origin?.name || 'Your location'}
                   </div>
                 </div>
-                <Crosshair size={14} color="#1A73E8" onClick={(e) => { e.stopPropagation(); onAutoDetectLocation(); }} title="Use Live GPS" />
+                <Crosshair size={14} color="#188038" onClick={(e) => { e.stopPropagation(); onAutoDetectLocation(); }} title="Use Live GPS" />
               </div>
 
               {/* Destination Input */}
               <div
                 onClick={() => setActiveInput(activeInput === 'DESTINATION' ? null : 'DESTINATION')}
                 style={{
-                  background: activeInput === 'DESTINATION' ? '#E8F0FE' : '#F1F3F4',
+                  background: activeInput === 'DESTINATION' ? '#E8F0FE' : '#F8F9FA',
                   borderRadius: '8px',
                   padding: '7px 12px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   cursor: 'pointer',
-                  border: activeInput === 'DESTINATION' ? '1.5px solid #1A73E8' : '1px solid transparent'
+                  border: activeInput === 'DESTINATION' ? '1.5px solid #D93025' : '1px solid #E8EAED'
                 }}
               >
                 <div style={{ overflow: 'hidden', flex: 1 }}>
-                  <div style={{ fontSize: '11px', color: '#70757A', fontWeight: 600 }}>DESTINATION</div>
-                  <div style={{ fontSize: '14px', fontWeight: 500, color: '#202124', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                  <div style={{ fontSize: '10.5px', color: '#D93025', fontWeight: 700, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#D93025' }}></span>
+                    <span>DESTINATION / END POINT (B)</span>
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#202124', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', marginTop: '1px' }}>
                     {destination?.name || 'Choose destination'}
                   </div>
                 </div>
@@ -509,7 +518,9 @@ export default function GoogleMapsDirectionsSidebar({
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: '15px', fontWeight: 600, color: '#202124' }}>
-                  {routeData?.isDetourRequired ? 'via Sarjapur Flyover Bypass' : 'via Direct Arterial Road'}
+                  {routeData?.isDetourRequired 
+                    ? (selectedCity === 'DEL' ? 'via Barakhamba Road Bypass' : selectedCity === 'BOM' ? 'via S.V. Road Flyover Bypass' : 'via Sarjapur Flyover Bypass')
+                    : (selectedCity === 'DEL' ? 'via Connaught Circus Corridor' : selectedCity === 'BOM' ? 'via Bandra-Santacruz Link' : 'via Direct Arterial Road')}
                 </div>
                 <div style={{ fontSize: '12px', color: '#137333', fontWeight: 600, marginTop: '2px' }}>
                   {routeData?.isDetourRequired ? 'Recommended: Avoids submerged choke-point' : 'Fastest route, normal water level'}
@@ -581,10 +592,10 @@ export default function GoogleMapsDirectionsSidebar({
                 color: '#3C4043',
                 lineHeight: '1.6'
               }}>
-                <div>1. Head southwest on {origin?.name || 'Starting Point'}</div>
-                <div>2. Turn onto elevated bypass to avoid {routeData?.hazardName || 'Silk Board'} ({routeData?.hazardDepth || 48} cm depth)</div>
-                <div>3. Continue along flyover for 3.2 km</div>
-                <div>4. Arrive at {destination?.name || 'Destination'}</div>
+                <div>1. Start from <strong>{origin?.name || 'Starting Point'}</strong></div>
+                <div>2. {routeData?.isDetourRequired ? `Take elevated detour to avoid ${routeData?.hazardName} (${routeData?.hazardDepth} cm flood depth)` : `Proceed along standard corridor`}</div>
+                <div>3. Continue along route for {routeData?.distanceKm || 5.2} km</div>
+                <div>4. Arrive at destination <strong>{destination?.name || 'Destination'}</strong></div>
               </div>
             )}
           </div>
@@ -604,7 +615,7 @@ export default function GoogleMapsDirectionsSidebar({
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: '15px', fontWeight: 600, color: '#202124' }}>
-                  via Inner Ring Road
+                  {selectedCity === 'DEL' ? 'via Sikandra Road / Tilak Marg' : selectedCity === 'BOM' ? 'via Western Express Highway' : 'via Inner Ring Road'}
                 </div>
                 <div style={{ fontSize: '12px', color: '#70757A', marginTop: '2px' }}>
                   Alternate route, moderate traffic

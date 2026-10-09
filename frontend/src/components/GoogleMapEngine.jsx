@@ -15,6 +15,8 @@ export default function GoogleMapEngine({
   vehicle,
   activeRoute,
   userLocation,
+  origin,
+  destination,
   onSelectIncident,
   pickingMode,
   onMapClick
@@ -150,11 +152,12 @@ export default function GoogleMapEngine({
 
     // Helper custom overlay for HTML markers
     class CustomHtmlOverlay extends window.google.maps.OverlayView {
-      constructor(position, htmlContent, onClick) {
+      constructor(position, htmlContent, onClick, anchorType = 'center') {
         super()
         this.position = position
         this.htmlContent = htmlContent
         this.onClick = onClick
+        this.anchorType = anchorType
         this.div = null
       }
 
@@ -162,6 +165,7 @@ export default function GoogleMapEngine({
         const div = document.createElement('div')
         div.style.position = 'absolute'
         div.style.cursor = 'pointer'
+        div.style.userSelect = 'none'
         div.innerHTML = this.htmlContent
         if (this.onClick) {
           div.addEventListener('click', (e) => {
@@ -179,8 +183,13 @@ export default function GoogleMapEngine({
         if (!overlayProjection || !this.div) return
         const point = overlayProjection.fromLatLngToDivPixel(this.position)
         if (point) {
-          this.div.style.left = point.x - 24 + 'px'
-          this.div.style.top = point.y - 24 + 'px'
+          this.div.style.left = point.x + 'px'
+          this.div.style.top = point.y + 'px'
+          if (this.anchorType === 'bottom') {
+            this.div.style.transform = 'translate(-50%, -100%)'
+          } else {
+            this.div.style.transform = 'translate(-50%, -50%)'
+          }
         }
       }
 
@@ -236,7 +245,8 @@ export default function GoogleMapEngine({
       const overlay = new CustomHtmlOverlay(
         new window.google.maps.LatLng(inc.lat, inc.lng),
         html,
-        () => onSelectIncident && onSelectIncident(inc)
+        () => onSelectIncident && onSelectIncident(inc),
+        'center'
       )
       overlay.setMap(mapInstanceRef.current)
       overlaysRef.current.push(overlay)
@@ -265,7 +275,8 @@ export default function GoogleMapEngine({
         const overlay = new CustomHtmlOverlay(
           new window.google.maps.LatLng(poth.lat, poth.lng),
           html,
-          () => {}
+          () => {},
+          'center'
         )
         overlay.setMap(mapInstanceRef.current)
         overlaysRef.current.push(overlay)
@@ -323,12 +334,117 @@ export default function GoogleMapEngine({
           if (mapInstanceRef.current) {
             mapInstanceRef.current.panTo({ lat: userLocation.lat, lng: userLocation.lng })
           }
-        }
+        },
+        'center'
       )
       overlay.setMap(mapInstanceRef.current)
       overlaysRef.current.push(overlay)
     }
-  }, [incidents, potholes, showPotholes, userLocation, isLoaded])
+
+    // D. Source / Starting Point Marker (A)
+    const effectiveOrigin = origin || activeRoute?.origin
+    if (effectiveOrigin && effectiveOrigin.lat && effectiveOrigin.lng) {
+      const html = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5));">
+          <!-- Source Label Callout -->
+          <div style="
+            background: #188038;
+            color: #FFFFFF;
+            font-family: Roboto, Arial, sans-serif;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 3px 9px;
+            border-radius: 14px;
+            border: 2px solid #FFFFFF;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 3px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 10;
+          ">
+            <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #A8DAB5;"></span>
+            <span>SOURCE: ${effectiveOrigin.name || 'Start Point'}</span>
+          </div>
+          <!-- Start Pin Target -->
+          <div style="
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #188038;
+            border: 3px solid #FFFFFF;
+            box-shadow: 0 0 12px rgba(24,128,56,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          ">
+            <div style="width: 6px; height: 6px; border-radius: 50%; background: #FFFFFF;"></div>
+          </div>
+        </div>
+      `
+      const overlay = new CustomHtmlOverlay(
+        new window.google.maps.LatLng(effectiveOrigin.lat, effectiveOrigin.lng),
+        html,
+        () => {
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.panTo({ lat: effectiveOrigin.lat, lng: effectiveOrigin.lng })
+          }
+        },
+        'center'
+      )
+      overlay.setMap(mapInstanceRef.current)
+      overlaysRef.current.push(overlay)
+    }
+
+    // E. Destination Marker (B) - Iconic Google Maps Red Teardrop Marker
+    const effectiveDest = destination || activeRoute?.destination
+    if (effectiveDest && effectiveDest.lat && effectiveDest.lng) {
+      const html = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5)); z-index: 25;">
+          <!-- Destination Label Callout -->
+          <div style="
+            background: #D93025;
+            color: #FFFFFF;
+            font-family: Roboto, Arial, sans-serif;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 3px 9px;
+            border-radius: 14px;
+            border: 2px solid #FFFFFF;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: -1px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 30;
+          ">
+            <span style="font-size: 12px;">📍</span>
+            <span>DESTINATION: ${effectiveDest.name || 'Destination'}</span>
+          </div>
+          <!-- Google Maps Red Teardrop Pin SVG -->
+          <svg width="32" height="42" viewBox="0 0 24 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 0C5.37258 0 0 5.37258 0 12C0 21.5 12 36 12 36C12 36 24 21.5 24 12C24 5.37258 18.6274 0 12 0Z" fill="#EA4335"/>
+            <circle cx="12" cy="12" r="5" fill="#FFFFFF"/>
+            <circle cx="12" cy="12" r="2.5" fill="#A50E0E"/>
+          </svg>
+        </div>
+      `
+      const overlay = new CustomHtmlOverlay(
+        new window.google.maps.LatLng(effectiveDest.lat, effectiveDest.lng),
+        html,
+        () => {
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.panTo({ lat: effectiveDest.lat, lng: effectiveDest.lng })
+          }
+        },
+        'bottom'
+      )
+      overlay.setMap(mapInstanceRef.current)
+      overlaysRef.current.push(overlay)
+    }
+  }, [incidents, potholes, showPotholes, userLocation, origin, destination, activeRoute, isLoaded])
 
   // 6. Render Laser Street Routes on Google Maps
   useEffect(() => {

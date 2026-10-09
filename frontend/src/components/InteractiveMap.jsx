@@ -12,6 +12,8 @@ export default function InteractiveMap({
   vehicle,
   activeRoute,
   userLocation,
+  origin,
+  destination,
   onSelectIncident,
   pickingMode,
   onMapClick,
@@ -29,6 +31,8 @@ export default function InteractiveMap({
         vehicle={vehicle}
         activeRoute={activeRoute}
         userLocation={userLocation}
+        origin={origin}
+        destination={destination}
         onSelectIncident={onSelectIncident}
         pickingMode={pickingMode}
         onMapClick={onMapClick}
@@ -331,57 +335,64 @@ export default function InteractiveMap({
 
     const isDetourRequired = vehicle === 'BIKE' || vehicle === 'SEDAN'
 
+    const effectiveOrigin = origin || activeRoute.origin
+    const effectiveDest = destination || activeRoute.destination
+
     // Google-style Start Pin
-    const startIcon = L.divIcon({
-      html: `
-        <div style="
-          background: #10B981;
-          color: #FFFFFF;
-          font-weight: 900;
-          font-size: 11px;
-          padding: 5px 10px;
-          border-radius: 999px;
-          border: 2.5px solid #FFFFFF;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.7), 0 0 14px #10B981;
-          white-space: nowrap;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-        ">
-          <span>🟢</span>
-          <span>START: ${activeRoute.origin.name.split(' ')[0]}</span>
-        </div>
-      `,
-      iconSize: [130, 28],
-      iconAnchor: [65, 14]
-    })
-    L.marker([activeRoute.origin.lat, activeRoute.origin.lng], { icon: startIcon }).addTo(routeLayer)
+    if (effectiveOrigin?.lat && effectiveOrigin?.lng) {
+      const startIcon = L.divIcon({
+        html: `
+          <div style="
+            background: #188038;
+            color: #FFFFFF;
+            font-weight: 800;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 2px solid #FFFFFF;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 10px rgba(24,128,56,0.6);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#A8DAB5;"></span>
+            <span>SOURCE: ${effectiveOrigin.name}</span>
+          </div>
+        `,
+        iconSize: [180, 28],
+        iconAnchor: [90, 14]
+      })
+      L.marker([effectiveOrigin.lat, effectiveOrigin.lng], { icon: startIcon }).addTo(routeLayer)
+    }
 
     // Google-style Destination Pin
-    const endIcon = L.divIcon({
-      html: `
-        <div style="
-          background: #4285F4;
-          color: #FFFFFF;
-          font-weight: 900;
-          font-size: 11px;
-          padding: 5px 10px;
-          border-radius: 999px;
-          border: 2.5px solid #FFFFFF;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.7), 0 0 14px #4285F4;
-          white-space: nowrap;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-        ">
-          <span>🏁</span>
-          <span>DEST: ${activeRoute.destination.name.split(' ')[0]}</span>
-        </div>
-      `,
-      iconSize: [120, 28],
-      iconAnchor: [60, 14]
-    })
-    L.marker([activeRoute.destination.lat, activeRoute.destination.lng], { icon: endIcon }).addTo(routeLayer)
+    if (effectiveDest?.lat && effectiveDest?.lng) {
+      const endIcon = L.divIcon({
+        html: `
+          <div style="
+            background: #D93025;
+            color: #FFFFFF;
+            font-weight: 800;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 2px solid #FFFFFF;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 12px rgba(217,48,37,0.6);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">
+            <span>📍</span>
+            <span>DESTINATION: ${effectiveDest.name}</span>
+          </div>
+        `,
+        iconSize: [190, 28],
+        iconAnchor: [95, 14]
+      })
+      L.marker([effectiveDest.lat, effectiveDest.lng], { icon: endIcon }).addTo(routeLayer)
+    }
 
     if (isDetourRequired) {
       // 1. Heavy Outer Casing (Deep black shadow outline for max contrast)

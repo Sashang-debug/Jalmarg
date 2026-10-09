@@ -258,6 +258,8 @@ export default function App() {
           vehicle={vehicle}
           activeRoute={activeRouteData}
           userLocation={userLocation}
+          origin={origin}
+          destination={destination}
           onSelectIncident={(inc) => setSelectedIncident(inc)}
           pickingMode={pickingMode}
           onMapClick={handleMapClick}
