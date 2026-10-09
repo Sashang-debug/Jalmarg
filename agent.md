@@ -195,6 +195,12 @@ For **every single feature or component**, the agent must strictly execute in th
   - Implemented authentic Google Maps pulsing live GPS beacon (`gmaps-pulse` keyframe animation with vibrant `#1A73E8` core, white ring, and "Your location" badge).
   - Ensured `GoogleMapEngine` and `InteractiveMap` prioritize and maintain focus on `userLocation` without being overridden by default city resets.
 
+* **Prominent Source & Destination Visual Definitions:**
+  - Added dedicated Google Maps map markers for both Source (A) and Destination (B).
+  - Source marker: emerald green circular target icon with `SOURCE: [Location Name]` callout badge.
+  - Destination marker: authentic Google Maps Red Teardrop Marker 📍 with `DESTINATION: [Location Name]` callout badge anchored precisely to the destination coordinates.
+  - Redesigned sidebar input cards with distinct `SOURCE / STARTING POINT (A)` and `DESTINATION / END POINT (B)` headings, color-coded timeline connectors, and city-aware corridor labels.
+
 ---
 
 ## 7. Current Status & Next Immediate Action
