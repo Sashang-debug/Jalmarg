@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { X, AlertTriangle, ShieldCheck, Bike, Car, Truck, Camera, CheckCircle2, Clock, Send, Users } from 'lucide-react'
 
-export default function IncidentDetailModal({ incident, onClose, onDispatchPump }) {
+export default function IncidentDetailModal({ incident, onClose, onDispatchPump, onResolveIncident }) {
   const [photoIndex, setPhotoIndex] = useState(0)
 
   if (!incident) return null
@@ -227,50 +227,111 @@ export default function IncidentDetailModal({ incident, onClose, onDispatchPump 
         </div>
 
         {/* Action Button: Dispatch Civic Pump */}
-        {!incident.pumpDispatched ? (
-          <button
-            onClick={() => {
-              onDispatchPump(incident.id)
-              onClose()
-            }}
-            style={{
-              width: '100%',
-              padding: '10px',
-              borderRadius: '8px',
-              border: 'none',
-              background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
-              color: '#fff',
-              fontSize: '0.82rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              boxShadow: 'var(--shadow-glow-critical)'
-            }}
-          >
-            <Send size={14} />
-            <span>Dispatch De-Watering Pump Unit</span>
-          </button>
-        ) : (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            color: 'var(--status-safe)',
-            fontSize: '0.82rem',
-            fontWeight: 700,
-            padding: '10px',
-            background: 'rgba(16, 185, 129, 0.1)',
-            borderRadius: '8px',
-            border: '1px solid rgba(16, 185, 129, 0.25)'
-          }}>
-            <CheckCircle2 size={16} />
-            <span>Civic Pump Unit Deployed & Active</span>
-          </div>
-        )}
+        {/* Recovery & Civic Action Buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {!incident.pumpDispatched ? (
+            <button
+              onClick={() => {
+                onDispatchPump(incident.id)
+                onClose()
+              }}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                color: '#fff',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                boxShadow: 'var(--shadow-glow-critical)'
+              }}
+            >
+              <Send size={14} />
+              <span>Dispatch De-Watering Pump Unit</span>
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                color: 'var(--status-safe)',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                padding: '8px 10px',
+                background: 'rgba(16, 185, 129, 0.1)',
+                borderRadius: '8px',
+                border: '1px solid rgba(16, 185, 129, 0.25)'
+              }}>
+                <CheckCircle2 size={15} />
+                <span>Pump Unit Deployed</span>
+              </div>
+
+              {onResolveIncident && (
+                <button
+                  onClick={() => {
+                    onResolveIncident(incident.id)
+                    onClose()
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#10B981',
+                    color: '#fff',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Mark de-watering completed and road safe"
+                >
+                  <span>De-Watered / Open Road</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Commuter Recovery Trigger: Water Receded */}
+          {onResolveIncident && (
+            <button
+              onClick={() => {
+                onResolveIncident(incident.id)
+                onClose()
+              }}
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                background: 'rgba(255, 255, 255, 0.05)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'background 0.2s'
+              }}
+              title="Confirm that flood water has drained and road is clear"
+            >
+              <CheckCircle2 size={14} color="#10B981" />
+              <span>Water Receded? Mark Road as Dry & Clear</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

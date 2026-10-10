@@ -5,7 +5,8 @@ export default function MunicipalPumpDashboard({
   isOpen,
   onClose,
   incidents,
-  onDispatchPump
+  onDispatchPump,
+  onResolveIncident
 }) {
   if (!isOpen) return null
 
@@ -149,9 +150,29 @@ export default function MunicipalPumpDashboard({
                   <span>Dispatch Pump</span>
                 </button>
               ) : (
-                <span style={{ fontSize: '0.7rem', color: 'var(--status-safe)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <CheckCircle size={12} /> Unit Deployed
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--status-safe)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <CheckCircle size={12} /> Unit Deployed
+                  </span>
+                  {onResolveIncident && (
+                    <button
+                      onClick={() => onResolveIncident(inc.id)}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: 'none',
+                        background: '#10B981',
+                        color: '#fff',
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                      title="De-watering complete, open road"
+                    >
+                      Complete & Open
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>

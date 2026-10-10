@@ -356,6 +356,15 @@ export default function App() {
     }))
   }
 
+  // 6. Resolve / Clear incident (water receded or municipal de-watering complete)
+  const handleResolveIncident = (incidentId) => {
+    setAllIncidents(prev => ({
+      ...prev,
+      [selectedCity]: (prev[selectedCity] || []).filter(inc => inc.id !== incidentId)
+    }))
+    setSelectedIncident(null)
+  }
+
   const activePumpTicketsCount = currentIncidents.filter(i => i.depthCm >= 25 && !i.pumpDispatched).length
 
   return (
@@ -601,6 +610,7 @@ export default function App() {
         onClose={() => setIsCivicDashboardOpen(false)}
         incidents={currentIncidents}
         onDispatchPump={handleDispatchPump}
+        onResolveIncident={handleResolveIncident}
       />
 
       <ObservabilityModal
@@ -612,6 +622,7 @@ export default function App() {
         incident={selectedIncident}
         onClose={() => setSelectedIncident(null)}
         onDispatchPump={handleDispatchPump}
+        onResolveIncident={handleResolveIncident}
       />
 
       <GoogleApiKeyModal
