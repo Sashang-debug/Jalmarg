@@ -1,12 +1,19 @@
-import React from 'react'
-import { X, AlertTriangle, ShieldCheck, Bike, Car, Truck, Camera, CheckCircle2, Clock, Send } from 'lucide-react'
+import React, { useState } from 'react'
+import { X, AlertTriangle, ShieldCheck, Bike, Car, Truck, Camera, CheckCircle2, Clock, Send, Users } from 'lucide-react'
 
 export default function IncidentDetailModal({ incident, onClose, onDispatchPump }) {
+  const [photoIndex, setPhotoIndex] = useState(0)
+
   if (!incident) return null
 
   const isBikeSafe = incident.depthCm < 20
   const isSedanSafe = incident.depthCm < 30
   const isSuvSafe = incident.depthCm < 55
+
+  const allPhotos = incident.photos && incident.photos.length > 0
+    ? incident.photos
+    : (incident.photoUrl ? [incident.photoUrl] : [])
+  const currentPhoto = allPhotos[photoIndex] || incident.photoUrl
 
   return (
     <div style={{
@@ -58,40 +65,84 @@ export default function IncidentDetailModal({ incident, onClose, onDispatchPump 
           <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
             {incident.ward} • Reported by {incident.author}
           </p>
+
+          {/* Multi-Commuter Consensus Corroboration Badge */}
+          {incident.verificationCount && incident.verificationCount > 1 && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              color: '#10B981',
+              borderRadius: '12px',
+              padding: '3px 10px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              marginTop: '6px'
+            }}>
+              <Users size={12} />
+              <span>Consensus Verified: {incident.verificationCount} Commuters Corroborated</span>
+            </div>
+          )}
         </div>
 
         {/* Photo Evidence if available */}
-        {incident.photoUrl && (
-          <div style={{
-            height: '160px',
-            borderRadius: '10px',
-            overflow: 'hidden',
-            marginBottom: '16px',
-            position: 'relative',
-            border: '1px solid var(--border-subtle)'
-          }}>
-            <img
-              src={incident.photoUrl}
-              alt={incident.roadName}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
+        {currentPhoto && (
+          <div style={{ marginBottom: '16px' }}>
             <div style={{
-              position: 'absolute',
-              bottom: '8px',
-              left: '8px',
-              background: 'rgba(0,0,0,0.7)',
-              backdropFilter: 'blur(4px)',
-              padding: '4px 8px',
-              borderRadius: '6px',
-              fontSize: '0.7rem',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
+              height: '160px',
+              borderRadius: '10px',
+              overflow: 'hidden',
+              position: 'relative',
+              border: '1px solid var(--border-subtle)'
             }}>
-              <Camera size={12} />
-              <span>SageMaker Anchor Verification</span>
+              <img
+                src={currentPhoto}
+                alt={incident.roadName}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              <div style={{
+                position: 'absolute',
+                bottom: '8px',
+                left: '8px',
+                background: 'rgba(0,0,0,0.7)',
+                backdropFilter: 'blur(4px)',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '0.7rem',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <Camera size={12} />
+                <span>Verified Camera Photo {allPhotos.length > 1 ? `(${photoIndex + 1}/${allPhotos.length})` : ''}</span>
+              </div>
             </div>
+
+            {/* Thumbnail switcher if multiple photos exist */}
+            {allPhotos.length > 1 && (
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
+                {allPhotos.map((p, idx) => (
+                  <img
+                    key={idx}
+                    src={p}
+                    alt={`Photo ${idx + 1}`}
+                    onClick={() => setPhotoIndex(idx)}
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '6px',
+                      objectFit: 'cover',
+                      cursor: 'pointer',
+                      border: photoIndex === idx ? '2px solid #06B6D4' : '1px solid rgba(255,255,255,0.2)',
+                      opacity: photoIndex === idx ? 1 : 0.6
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 

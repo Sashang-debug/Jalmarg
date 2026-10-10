@@ -15,7 +15,8 @@ import {
   MULTI_CITY_POTHOLES, 
   MULTI_CITY_ROUTES,
   CITY_CONFIGS,
-  calculateDynamicRoute
+  calculateDynamicRoute,
+  calculateHaversineDistance
 } from './data/mockTelemetry'
 import {
   fetchStreetRoute,
@@ -277,14 +278,65 @@ export default function App() {
     setIsSidebarOpen(true)
   }
 
-  // 4. Add crowdsourced incident in real time
+  // 4. Add crowdsourced incident with Autonomous Spatial Consensus & Deduplication Agent
   const handleAddIncident = (newIncident) => {
-    setAllIncidents(prev => ({
-      ...prev,
-      [selectedCity]: [newIncident, ...(prev[selectedCity] || [])]
-    }))
-    // Open verification modal so commuter immediately inspects their newly uploaded real-time flood pin
-    setSelectedIncident(newIncident)
+    setAllIncidents(prev => {
+      const cityIncidents = prev[selectedCity] || []
+
+      // Check if there is an existing active hazard within 120 meters (0.12 km)
+      const nearbyIndex = cityIncidents.findIndex(inc => {
+        const distKm = calculateHaversineDistance(newIncident.lat, newIncident.lng, inc.lat, inc.lng)
+        return distKm <= 0.12
+      })
+
+      if (nearbyIndex !== -1) {
+        // [SPATIAL CONSENSUS AGENT]: Merge into existing hazard cluster
+        const existing = cityIncidents[nearbyIndex]
+        const newCount = (existing.verificationCount || 1) + 1
+        const maxDepth = Math.max(existing.depthCm, newIncident.depthCm)
+        const updatedSeverity = maxDepth >= 35 ? 'CRITICAL_NO_ENTRY' : 'MODERATE_RISK'
+
+        const updatedIncident = {
+          ...existing,
+          verificationCount: newCount,
+          depthCm: maxDepth,
+          severity: updatedSeverity,
+          author: `Consensus: ${newCount} Commuter Reports`,
+          reportedAt: 'Just now (Updated)',
+          photoUrl: newIncident.photoUrl || existing.photoUrl,
+          photos: [
+            ...(existing.photos || [existing.photoUrl].filter(Boolean)),
+            newIncident.photoUrl
+          ].filter(Boolean),
+          riskDescription: `Multi-Commuter Consensus (${newCount} live camera verifications). Water depth confirmed at ${maxDepth} cm.`,
+          pumpDispatched: existing.pumpDispatched || maxDepth >= 35,
+          pumpStatus: (existing.pumpDispatched || maxDepth >= 35) ? 'PUMP_EN_ROUTE' : 'MONITORING',
+          isConsensusVerified: true
+        }
+
+        const updatedList = [...cityIncidents]
+        updatedList[nearbyIndex] = updatedIncident
+        setSelectedIncident(updatedIncident)
+
+        return {
+          ...prev,
+          [selectedCity]: updatedList
+        }
+      } else {
+        // Fresh distinct hazard spot
+        const freshIncident = {
+          ...newIncident,
+          verificationCount: 1,
+          photos: newIncident.photoUrl ? [newIncident.photoUrl] : []
+        }
+        setSelectedIncident(freshIncident)
+
+        return {
+          ...prev,
+          [selectedCity]: [freshIncident, ...cityIncidents]
+        }
+      }
+    })
   }
 
   // 5. Dispatch de-watering pump unit
