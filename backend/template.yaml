@@ -1,180 +1,277 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: >
-  JalMarg (जलमार्ग) - Autonomous Urban Flood-Depth Intelligence & Monsoon Navigation Protocol
-  AWS Serverless Application Model (SAM) Specification
-
+Description: JalMarg shared waterlogging reports, private evidence, operator review, and auditable processing. Observations are approximate; no automatic civic dispatch.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+Parameters:
+  FrontendOrigin:
+    Type: String
+    Default: http://localhost:5173
+    Description: Exact frontend origin for CORS and Cognito callback (no trailing slash).
+    AllowedPattern: 'https?://[^/]+(:[0-9]+)?'
 Globals:
   Function:
+    Runtime: python3.12
     Timeout: 30
     MemorySize: 256
-    Runtime: python3.12
     Tracing: Active
     Environment:
       Variables:
         TABLE_NAME: !Ref JalMargIncidentsTable
         BUCKET_NAME: !Ref JalMargEvidenceBucket
-        EVENT_BUS_NAME: !Ref JalMargEventBus
-        QUEUE_URL: !Ref JalMargIncidentQueue
-
+        ALLOWED_ORIGIN: !Ref FrontendOrigin
 Resources:
-  # ==========================================
-  # STORAGE: DynamoDB Table with TTL
-  # ==========================================
   JalMargIncidentsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: shared durable reports with conditional version writes; city partitions avoid scans
+        must: [retain report data, filter expiresAt in application independently of TTL deletion]
     Properties:
-      TableName: JalMarg_Incidents
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-        - AttributeName: SK
-          AttributeType: S
-        - AttributeName: City
-          AttributeType: S
-        - AttributeName: CreatedAt
-          AttributeType: S
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
       KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-        - AttributeName: SK
-          KeyType: RANGE
-      GlobalSecondaryIndexes:
-        - IndexName: CityIndex
-          KeySchema:
-            - AttributeName: City
-              KeyType: HASH
-            - AttributeName: CreatedAt
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-      TimeToLiveSpecification:
-        AttributeName: TTL
-        Enabled: true
-      StreamSpecification:
-        StreamViewType: NEW_AND_OLD_IMAGES
-
-  # ==========================================
-  # STORAGE: S3 Evidence Vault
-  # ==========================================
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      TimeToLiveSpecification: {AttributeName: TTL, Enabled: true}
+      SSESpecification: {SSEEnabled: true}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
   JalMargEvidenceBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: private citizen evidence with short-lived signed viewing URLs
+        must: [block public access, TLS only, expire evidence after seven days]
     Properties:
-      BucketName: !Sub "jalmarg-evidence-vault-${AWS::AccountId}-${AWS::Region}"
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders: ['*']
-            AllowedMethods: [GET, PUT, POST]
-            AllowedOrigins: ['*']
-            MaxAge: 3600
-
-  # ==========================================
-  # MESSAGING: EventBridge Custom Event Bus
-  # ==========================================
-  JalMargEventBus:
-    Type: AWS::Events::EventBus
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: RemoveOldEvidence
+            Status: Enabled
+            ExpirationInDays: 7
+            NoncurrentVersionExpiration: {NoncurrentDays: 7}
+  EvidenceTlsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: deny unencrypted transport to evidence
+        must: [retain aws:SecureTransport explicit deny]
     Properties:
-      Name: jalmarg-event-bus
-
-  # ==========================================
-  # MESSAGING: SQS Priority & Dead Letter Queues
-  # ==========================================
-  JalMargIncidentDLQ:
-    Type: AWS::SQS::Queue
+      Bucket: !Ref JalMargEvidenceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt JalMargEvidenceBucket.Arn, !Sub '${JalMargEvidenceBucket.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+  OperatorPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: authenticated review identities; only administrators provision operators
+        must: [disable public registration, backend checks civic-operators group]
     Properties:
-      QueueName: jalmarg-incident-dlq
-      MessageRetentionPeriod: 1209600 # 14 days
-
-  JalMargIncidentQueue:
-    Type: AWS::SQS::Queue
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+  OperatorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: explicit operator membership separates authentication from authority
+        must: [membership assigned by account administrator]
     Properties:
-      QueueName: jalmarg-incident-priority-queue
-      VisibilityTimeout: 60
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt JalMargIncidentDLQ.Arn
-        maxReceiveCount: 3
-
-  # EventBridge Rule to route Critical Flood Incidents to SQS
-  CriticalFloodEventRule:
-    Type: AWS::Events::Rule
+      GroupName: civic-operators
+      UserPoolId: !Ref OperatorPool
+  OperatorClient:
+    Type: AWS::Cognito::UserPoolClient
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: public browser client; authorization code flow with PKCE in frontend
+        must: [no client secret, exact callback origin, no implicit grant]
     Properties:
-      EventBusName: !Ref JalMargEventBus
-      Name: jalmarg-critical-flood-rule
-      EventPattern:
-        source:
-          - "jalmarg.incident"
-        detail-type:
-          - "IncidentReported"
-        detail:
-          severity:
-            - "CRITICAL_NO_ENTRY"
-            - "MODERATE_RISK"
-      Targets:
-        - Arn: !GetAtt JalMargIncidentQueue.Arn
-          Id: "CriticalIncidentQueueTarget"
-
-  # ==========================================
-  # API GATEWAY
-  # ==========================================
+      UserPoolId: !Ref OperatorPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub '${FrontendOrigin}/']
+      LogoutURLs: [!Sub '${FrontendOrigin}/']
+      EnableTokenRevocation: true
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      RefreshTokenValidity: 1
+      TokenValidityUnits: {AccessToken: minutes, IdToken: minutes, RefreshToken: days}
+      PreventUserExistenceErrors: ENABLED
+  OperatorDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: hosted sign-in handles password reset and MFA without browser-owned passwords
+        must: [unique domain per stack and account]
+    Properties:
+      Domain: !Sub 'jalmarg-${AWS::AccountId}-${OperatorClient}'
+      UserPoolId: !Ref OperatorPool
   JalMargApi:
     Type: AWS::Serverless::Api
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: existing REST API form supports Cognito review authorizer and throttled public reports
+        must: [review endpoint requires Cognito, public reports cannot choose verification status]
     Properties:
+      Name: !Ref AWS::StackName
       StageName: prod
+      TracingEnabled: true
       Cors:
         AllowMethods: "'GET,POST,OPTIONS'"
-        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-        AllowOrigin: "'*'"
-
-  # ==========================================
-  # SERVERLESS COMPUTE: Lambda Handlers
-  # ==========================================
-  IngestIncidentFunction:
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: !Sub "'${FrontendOrigin}'"
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingBurstLimit: 20
+          ThrottlingRateLimit: 10
+          MetricsEnabled: true
+      Auth:
+        Authorizers:
+          OperatorAuthorizer:
+            UserPoolArn: !GetAtt OperatorPool.Arn
+            Identity:
+              Header: Authorization
+              ValidationExpression: !Sub '^${OperatorClient}$'
+  IncidentApiFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: shared validated API and optimistic updates; no user-supplied trust claims
+        must: [private evidence only, authorize review group server-side]
     Properties:
       CodeUri: src/
-      Handler: ingest_incident.lambda_handler
+      Handler: api.lambda_handler
+      Environment:
+        Variables:
+          OPERATOR_CLIENT_ID: !Ref OperatorClient
+          WORKFLOW_ARN: !Ref IncidentWorkflow
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref JalMargIncidentsTable
-        - S3CrudPolicy:
-            BucketName: !Ref JalMargEvidenceBucket
-        - EventBridgePutEventsPolicy:
-            EventBusName: !Ref JalMargEventBus
+        - DynamoDBCrudPolicy: {TableName: !Ref JalMargIncidentsTable}
+        - S3CrudPolicy: {BucketName: !Ref JalMargEvidenceBucket}
+        - StepFunctionsExecutionPolicy: {StateMachineName: !GetAtt IncidentWorkflow.Name}
       Events:
-        PostIncident:
+        Health:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /health, Method: get}
+        List:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /incidents, Method: get}
+        Report:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /incidents, Method: post}
+        Upload:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /evidence, Method: post}
+        Observation:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: '/incidents/{id}/observations', Method: post}
+        Review:
           Type: Api
           Properties:
             RestApiId: !Ref JalMargApi
-            Path: /incidents
+            Path: /incidents/{id}/review
             Method: post
-
-  QueryIncidentsFunction:
+            Auth: {Authorizer: OperatorAuthorizer}
+  ProcessReportFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: idempotent processing records NEEDS_REVIEW without claiming image inference
+        must: [never overwrite human review, conditional version write]
     Properties:
       CodeUri: src/
-      Handler: query_incidents.lambda_handler
+      Handler: api.process_handler
       Policies:
-        - DynamoDBReadPolicy:
-            TableName: !Ref JalMargIncidentsTable
-      Events:
-        GetIncidents:
-          Type: Api
-          Properties:
-            RestApiId: !Ref JalMargApi
-            Path: /incidents
-            Method: get
-
+        - DynamoDBCrudPolicy: {TableName: !Ref JalMargIncidentsTable}
+  IncidentWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: auditable visual processing with retry; human review is a separate protected API action
+        must: [reference actual function ARN, never auto-confirm or dispatch]
+    Properties:
+      Type: STANDARD
+      DefinitionUri: step_functions/report_review.json
+      DefinitionSubstitutions:
+        ProcessReportArn: !GetAtt ProcessReportFunction.Arn
+      Policies:
+        - LambdaInvokePolicy: {FunctionName: !Ref ProcessReportFunction}
+      Tracing: {Enabled: true}
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: bounded operational log retention; requests include incident ID and duration
+        must: [do not log evidence payloads or authentication tokens]
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${IncidentApiFunction}'
+      RetentionInDays: 14
+  ProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: retain workflow processing failures for debugging
+        must: [bounded retention]
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProcessReportFunction}'
+      RetentionInDays: 14
+  ApiFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: detect actual failed API invocations rather than simulated service metrics
+        must: [measure deployed function]
+    Properties:
+      Namespace: AWS/ApiGateway
+      MetricName: 5XXError
+      Dimensions: [{Name: ApiName, Value: !Ref AWS::StackName}]
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 Outputs:
   JalMargApiUrl:
-    Description: "API Gateway endpoint URL for Prod stage"
-    Value: !Sub "https://${JalMargApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
-  IncidentsTableName:
-    Description: "DynamoDB Table Name"
-    Value: !Ref JalMargIncidentsTable
-  EvidenceBucketName:
-    Description: "S3 Evidence Vault Bucket Name"
-    Value: !Ref JalMargEvidenceBucket
-  EventBusName:
-    Description: "Custom EventBridge Bus Name"
-    Value: !Ref JalMargEventBus
+    Value: !Sub 'https://${JalMargApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  IncidentsTableName: {Value: !Ref JalMargIncidentsTable}
+  EvidenceBucketName: {Value: !Ref JalMargEvidenceBucket}
+  WorkflowArn: {Value: !Ref IncidentWorkflow}
+  OperatorPoolId: {Value: !Ref OperatorPool}
+  OperatorClientId: {Value: !Ref OperatorClient}
+  OperatorAuthDomain:
+    Value: !Sub 'https://${OperatorDomain}.auth.${AWS::Region}.amazoncognito.com'

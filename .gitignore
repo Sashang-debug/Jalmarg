@@ -25,6 +25,7 @@ out/
 
 # LocalStack & Docker Data
 .localstack/
+data/local/
 opensearch-data/
 
 # IDE & Editor

@@ -206,9 +206,9 @@ For **every single feature or component**, the agent must strictly execute in th
 
 ---
 
-## 7. Current Status & Next Immediate Action
+## 7. Archived prototype milestone (superseded by section 8)
 
-* **Current State:** **All 5 Phases Complete (End-to-End Hackathon Production Ready).**
+* **Current State:** **Original prototype milestone; cloud integration and production readiness were not verified.**
   - **Phase 1:** Serverless scaffolding & LocalStack/SAM foundation.
   - **Phase 2:** Strands OSINT parser, Bedrock landmark resolver, SageMaker CV depth estimator, and Cedar policy engine.
   - **Phase 3:** OpenSearch spatial polygon queries, Location Service vehicle routing, Step Functions pipeline, Amazon Polly audio radar, and WhatsApp voice ingestion.
@@ -217,3 +217,204 @@ For **every single feature or component**, the agent must strictly execute in th
 * **Next Action:** Ready for live judge demonstration, pitch rehearsal, and hackathon submission.
 
 
+
+## 8. Improvement phase — 10 October 2026
+
+The earlier phase checkboxes describe prototype modules, not verified production
+integrations. The blueprint remains a vision document. The following tracker is the
+authoritative status of the improvement work.
+
+### 8.1 Shared incident platform — plan → build → test
+- **Plan:** Shared API contract, durable local/cloud repositories, evidence storage,
+  protected operator actions and a real processing workflow. See IMPLEMENTATION_PLAN.md.
+- **Built:** `api.py`, `incident_service.py`, `incident_repository.py`, and
+  `backend/local_server.py`; SQLite persistence, private S3/DynamoDB implementation,
+  optimistic version writes, status history, expiry, observation validation, Cognito
+  group checks, local-only operator token, and a deployable processing state machine.
+- **Tested:** 14 new backend behavior tests passed, covering restart/session
+  persistence, invalid coordinates, caller-supplied trust flags, unauthorized review,
+  duplicate observations, conditional updates, evidence validation, expiry, retry
+  idempotence and processing failure. `sam validate --lint` passed.
+- **Limit:** Cloud resources have not been deployed; Cognito and DynamoDB/S3 runtime
+  execution must be smoke-tested after deployment. Public browser identifiers limit
+  accidental repeat observations, not malicious Sybil submissions. No automatic
+  confirmation, image depth inference or municipal pump dispatch is performed.
+
+### 8.2 Street routing and provider switching — plan → build → test
+- **Plan:** Check real route segments, all alternatives, expiry and threshold edges;
+  remove synthetic fallback routes and conditional React hooks.
+- **Built:** `floodRouting.js` compares every road segment in a local tangent plane;
+  checks returned alternatives and both avoidance waypoints; distinguishes available,
+  blocked, loading and unavailable results. Stale route responses are cancelled.
+  Leaflet/Google are isolated components loaded lazily, eliminating provider hook-order
+  violations and reducing the initial JS bundle from 571 KB to about 301 KB.
+- **Tested:** 11 Node tests passed: sparse/curved routes, false endpoint-chord collisions,
+  expiry, clearance boundaries, blocked alternatives, failed detours and offline routing.
+  Frontend build and lint passed with no errors; legacy component warnings remain.
+- **Limit:** OSRM driving estimates are shared across vehicle profiles. Avoidance
+  settings are prototype heuristics, not vehicle safety certifications or flood measurements.
+
+### 8.3 Commuter interface — plan → build → test
+- Original midnight JalMarg shell with clear journey inputs, vehicle profiles,
+  route rationale and active report list; responsive mobile sheet and native modal
+  focus management. Live reports and recorded replay are visibly separated.
+- Three-step reporting re-encodes photos to strip EXIF and reduce upload size.
+  Evidence view includes timestamps, approximate level, review status, follow-up
+  observations and audit history. Separate operator workspace uses local development
+  token or Cognito authorization-code + PKCE login; tokens remain in memory.
+- Audio uses explicitly labeled device speech, without claiming Amazon Polly.
+- Existing WhatsApp source edits remain intact; the old reporting simulator is not
+  used by the new public reporting flow.
+
+- **Browser-tested:** Report submission and explicit review screen; refresh persistence;
+  second-tab visibility; local operator confirmation, review ticket and clearance;
+  clearance propagation; desktop Google Maps with a real OSRM route; 390 × 844
+  mobile sheet expansion and reporting modal; Escape dismissal. One temporary
+  synthetic report was marked cleared after testing. Fixed a Continue/Submit DOM
+  reuse issue found in browser testing, validated coordinate limits, removed duplicate
+  photo preview from uploads, and added the mobile operator accessible label.
+- **Remaining UX validation:** Device GPS permissions, real camera upload and spoken
+  voice output need a physical-device check. Evidence bytes and MIME behavior are
+  covered in backend tests. Cognito sign-in needs a deployed pool.
+
+### 8.4 Delivery — plan → build → test
+- README now distinguishes the working shared journey from legacy simulations.
+  DEPLOYMENT.md documents cloud setup, exact environment variables, operators,
+  retained resources and required cloud smoke checks. Existing user changes in
+  WhatsApp webhook and old ReportModal were preserved.
+- Final automated checks: 20 Python unittest cases passed (14 new + 6 legacy),
+  Phase 2 script 4/4 and Phase 3 script 5/5 passed; 11 frontend routing tests passed;
+  Vite production build passed (initial JS ~302 KB, separate map chunks);
+  oxlint passed with zero errors and existing legacy/component warnings;
+  SAM template lint validation passed.
+- `sam build` attempted but blocked: Python 3.12 runtime is absent on this host
+  (available default is Python 3.14). Install the matching runtime or build with
+  Docker before deploying. CloudFormation Guard is absent, so its compliance checks
+  have not run. No cloud resources created; no successful cloud build or runtime
+  deployment claimed. CLI identity and IAM deployment action simulation were verified
+  earlier; that does not establish quota/SCP/deployment success.
+- Local API/frontend remain available at 127.0.0.1:3001 and 127.0.0.1:5173.
+  They are development processes, not production hosting.
+
+- **Provider check:** Switching Google → Leaflet produced no browser errors. CARTO
+  returned key-required placeholder tiles, so the fallback now uses standard OSM
+  raster tiles with visible attribution and normal browser caching. Actual OSM
+  map rendering was verified; mobile width equals document width (390 px, no
+  horizontal overflow). Screenshots are saved under docs/.
+
+## 9. Maps interface rework — October 10, 2026
+
+### 9.1 Plan and build
+- Audited the user's Google Maps references and previous layout. Plan recorded in
+  `UI_REWORK_PLAN.md`; applied the required frontend design skill and official
+  Material Web controls. Compact directions, navigation rail/menu and map layers
+  replace the headline-heavy shell. New navigation-pin wordmark, blue source and
+  red destination pins, larger waterlogging warning markers and labeled captions.
+- Light/dark/system appearance, actual Google traffic/transit/terrain/satellite
+  layers, satellite labels and GPS recentering. OSM fallback explicitly disables
+  unsupported layers. Traffic is visual; OSRM ETA is still a driving estimate.
+- Gwalior is the default. GPS/map/search coordinates determine the reporting city,
+  overriding stale Mumbai context. Unknown cities use OTHER, never Mumbai. The
+  API accepts GWL and OTHER. Reporting uses place search, named road and adjustable
+  map pin; normal latitude/longitude fields removed. Address lookup failure keeps
+  the pin usable. Nominatim fallback uses explicit searches only, cached and
+  serialized; public deployment needs a suitable provider.
+- Four session-only dummy scenarios place observations on real returned OSRM
+  geometry: clear roads, flooded fastest road, all exits flooded, cleared flood.
+  Expected/outcome indicator and blocked-vs-selected paths make rerouting visible.
+  Dummy observations are never submitted to the live incident API.
+- Build passed; 19 frontend behavior tests and 21 backend unittest cases passed.
+  Desktop verified Gwalior 10-minute route → 15-minute detour, blocked result,
+  restored route after clearance, live Google traffic and satellite rendering,
+  local report search/map selection/review, stale-place invalidation, menu Escape.
+  Mobile/provider verification completed as recorded below.
+
+### 9.2 Test and delivery
+- Final: 19 Node tests, 21 Python unittest cases, production build, and diff
+  whitespace checks passed. Lint has zero errors; legacy unused-code warnings
+  and three map/search lifecycle warnings remain. Main JS is ~388 KB (119 KB gzip);
+  map providers load separately and marker assets add ~2.5 KB.
+- Browser checked Google light/dark, traffic colors, satellite imagery, layer
+  controls, source/destination captions, large dummy warning, Gwalior reroute
+  (10 min / 5.0 km → 15 min / 8.1 km), fully blocked and cleared scenarios.
+- Verified explicit external search fallback returns Gwalior Junction from OSM;
+  local search tolerates commas, case and word order. Editing invalidates the old
+  route; unsupported-city selection clears both fields instead of retaining
+  misleading metro names. Menu uses native modal focus management and Escape.
+- Verified reporting with Gwalior suggestions, adjustable map pin, approximate
+  address fallback and explicit review. The map pin is labeled Report location,
+  not Destination. No test observation was submitted to the shared live API.
+- Mobile 390 × 844: both themes, expanded/collapsed sheet, glanceable ETA,
+  panel scroll reset, reporting modal/map, visible provider attribution and no
+  horizontal overflow. Viewport override reset after testing. Google → OSM
+  provider switching renders tiles; unsupported layers are disabled/explained.
+- Screenshots: docs/jalmarg-maps-light.jpg, docs/jalmarg-maps-dark.jpg,
+  docs/jalmarg-maps-mobile.jpg. Updated README has repeatable test steps.
+- Current Google browser key has Maps JavaScript enabled but Geocoding disabled;
+  broad search falls back to OSM and reverse lookup uses approximate local names.
+  Enabling Geocoding requires a separate Google project configuration change.
+  GPS city selection is behavior-tested with Gwalior coordinates; actual device
+  permission/accuracy, camera and speech still require physical-device testing.
+- Local API restarted with GWL/OTHER support on 127.0.0.1:3001; frontend is on
+  127.0.0.1:5173. AWS infrastructure was not deployed during this UI rework.
+
+- Final clean page reload and Gwalior dummy reroute produced no new browser console errors.
+
+## 10. Vehicle timings, route advisory, city picker and photo assessment (2026-10-10)
+
+### 10.1 Plan and implementation
+- Followed ENHANCEMENT_PLAN.md and retained the existing Material consumer-map
+  design. Added searchable themed area picker, keyboard selection/Escape and
+  mobile stacking above connection badges and the journey sheet.
+- Added Google Routes JS adapter: TWO_WHEELER for bikes; DRIVING for sedan/SUV;
+  traffic-aware departure-now timing, real path/duration/distance and via-point
+  detours. Existing segment geometry audit still selects routes. No fake vehicle
+  multipliers. Sedan/SUV on the same road may legitimately share a time.
+- Google failures fall back to an entirely OSRM-derived journey with explicit
+  no-live-traffic/provider notice. SDK waits are bounded to 12 seconds, stale
+  results are ignored on abort, and failures briefly suppress repeated requests.
+- Browser confirmed exact Google error: PERMISSION_DENIED, Routes API disabled
+  for the current browser key's project. Live Google ETA success remains unverified
+  until Routes API/project restrictions/billing are configured. Maps JS rendering
+  and visual traffic alone do not provide a traffic-aware route ETA.
+- Corrected route choice: the fastest candidate below the selected vehicle's
+  avoidance threshold wins; a below-threshold report no longer forces a slower
+  SUV route just because another candidate has fewer reports.
+- English/Hindi audio text now states vehicle, endpoints, avoided report/depth,
+  original and selected time, added distance, provider and remaining hazards.
+  Dummy mode is announced. Playback remains device speech, not Amazon Polly.
+- Marker evidence now shows 2-wheeler/sedan/SUV assessments, current vehicle,
+  20/30/55 cm prototype avoidance settings and provenance/uncertainty. Named
+  road replaces raw coordinates. Below-setting observations require review;
+  they are never presented as permission to cross.
+- Replaced the old caption-keyword mock with an optional user-assisted photo
+  reference workflow: known-height object, top/base/waterline marks, accessible
+  sliders and explicit confirmation. This is image geometry, NOT automatic AI.
+  Server validates/recomputes the estimate, retains unverified provenance and
+  uses max(observed-level depth, photo-reference depth) for routing. No accuracy
+  guarantee. Automatic CV/model deployment remains future work.
+
+### 10.2 Build and test
+- 28 Node behavior tests and 24 Python tests passed; production build passed.
+  Lint reports zero errors with existing legacy/lifecycle warnings. Added tests
+  cover actual Google mode/traffic fields, via points, timeout/abort, advisory
+  explanation, inclusive vehicle settings, photo geometry validation, server
+  recomputation/provenance/persistence and prevention of reduced observed depth.
+- Desktop browser verified Gwalior dummy 2-wheeler detour 15 min/8.1 km versus
+  SUV original route 10 min/5.0 km, accurate advisory text and marker assessment.
+  Google disabled-API notice verified. Physical speech playback still needs a
+  device check; no claim of successful Google ETA or automatic image analysis.
+- Synthetic photo upload, keyboard marks (top .2/base .8/water .4), 60 cm reference
+  and 40 cm result verified through report review in test mode. No synthetic
+  observation was submitted to the shared live API.
+- Both themes inspected. Mobile 390x844: picker search/keyboard selection,
+  overlay stacking and no horizontal overflow checked; viewport reset afterward.
+  Screenshot docs/jalmarg-city-mobile.jpg. Updated README with enablement and
+  repeatable photo/vehicle test instructions.
+- Local API restarted with photo-reference validation; no AWS deployment or
+  Google project configuration change performed. Prior user changes in legacy
+  ReportModal.jsx and whatsapp_webhook_server.py remain untouched.
+- Final checks repeated after validation/mobile fixes: all 52 tests, build and
+  whitespace checks pass; no browser console errors on the final marker flow.
+  Additional screenshots: docs/jalmarg-city-desktop.jpg and
+  docs/jalmarg-vehicle-assessment.jpg. API restarted with final validation.

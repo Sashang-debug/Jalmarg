@@ -49,8 +49,10 @@ export default function ReportModal({
   const [photoTimestamp, setPhotoTimestamp] = useState(null)
   const cameraInputRef = useRef(null)
 
-  // WhatsApp Bot State
-  const [whatsappPhone, setWhatsappPhone] = useState('+91 99887 45210')
+  // WhatsApp Bot State - Configurable Bot Number & Official Twilio Public Sandbox
+  const [whatsappBotNumber, setWhatsappBotNumber] = useState('14155238886') // Twilio Verified Developer Sandbox (+1 415 523 8886)
+  const [isEditingBotNumber, setIsEditingBotNumber] = useState(false)
+  const [whatsappPhone, setWhatsappPhone] = useState('Verified Citizen (+91 98XXX XXXXX)')
   const [whatsappTranscript, setWhatsappTranscript] = useState(
     'Bhaiya, Marathahalli bridge ke neeche car ke bonnet tak paani aa gaya hai!'
   )
@@ -755,12 +757,64 @@ export default function ReportModal({
                     }}
                   />
                   <span style={{ fontSize: '13px', fontWeight: 700, color: '#166534' }}>
-                    JalMarg Official Bot (+91 99887 45210)
+                    {whatsappBotNumber === '14155238886'
+                      ? 'Twilio Official Bot Sandbox (+1 415 523 8886)'
+                      : `JalMarg Official Bot (+${whatsappBotNumber})`}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingBotNumber(!isEditingBotNumber)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#15803D',
+                      fontSize: '11px',
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                  >
+                    {isEditingBotNumber ? 'Done' : 'Change'}
+                  </button>
                 </div>
                 <div style={{ fontSize: '11.5px', color: '#15803D' }}>
                   Send photos or voice notes on WhatsApp — AI identifies location & water depth.
                 </div>
+
+                {isEditingBotNumber && (
+                  <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      value={whatsappBotNumber}
+                      onChange={(e) => setWhatsappBotNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="Enter your WhatsApp Business Number"
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '11.5px',
+                        borderRadius: '6px',
+                        border: '1px solid #86EFAC',
+                        background: '#FFFFFF',
+                        width: '180px'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappBotNumber('14155238886')}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '10.5px',
+                        borderRadius: '6px',
+                        border: '1px solid #86EFAC',
+                        background: '#DCFCE7',
+                        color: '#166534',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Reset to Twilio Sandbox
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -789,7 +843,11 @@ export default function ReportModal({
 
                 {/* Direct Link to open real WhatsApp on phone / web */}
                 <a
-                  href={`https://wa.me/919988745210?text=${encodeURIComponent(whatsappTranscript)}`}
+                  href={
+                    whatsappBotNumber === '14155238886'
+                      ? 'https://wa.me/14155238886?text=join%20jalmarg-flood'
+                      : `https://wa.me/${whatsappBotNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(whatsappTranscript)}`
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   id="link-open-whatsapp-chat"
@@ -830,12 +888,24 @@ export default function ReportModal({
                   📱 Scan with your Mobile Phone Camera or WhatsApp:
                 </div>
                 <img
-                  src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https%3A%2F%2Fwa.me%2F919988745210%3Ftext%3DReporting%20flood%20waterlogging"
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
+                    whatsappBotNumber === '14155238886'
+                      ? 'https://wa.me/14155238886?text=join%20jalmarg-flood'
+                      : `https://wa.me/${whatsappBotNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(whatsappTranscript)}`
+                  )}`}
                   alt="WhatsApp Bot QR Code"
                   style={{ width: '130px', height: '130px', margin: '0 auto', display: 'block', borderRadius: '6px' }}
                 />
                 <div style={{ fontSize: '11px', color: '#5F6368', marginTop: '6px' }}>
-                  Opens WhatsApp directly to <strong>+91 99887 45210</strong> with prefilled flood report.
+                  {whatsappBotNumber === '14155238886' ? (
+                    <span>
+                      Opens the official <strong>Twilio WhatsApp Developer Sandbox (+1 415 523 8886)</strong> with join code <code>join jalmarg-flood</code>.
+                    </span>
+                  ) : (
+                    <span>
+                      Opens your registered WhatsApp Bot number <strong>+{whatsappBotNumber}</strong>.
+                    </span>
+                  )}
                 </div>
               </div>
             )}

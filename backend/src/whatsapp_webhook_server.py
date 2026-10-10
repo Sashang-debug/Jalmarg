@@ -111,7 +111,7 @@ class RealWhatsAppWebhookHandler:
         sender = data.get("From", "")
         if isinstance(sender, list):
             sender = sender[0]
-        sender = sender.replace("whatsapp:", "") or "+91 99887 45210"
+        sender = sender.replace("whatsapp:", "") or "+1 415 523 8886"
 
         body = data.get("Body", "")
         if isinstance(body, list):
@@ -133,7 +133,7 @@ class RealWhatsAppWebhookHandler:
         return self.process_and_resolve(sender, body, photo_url, geo_coords)
 
     def _parse_direct_payload(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        sender = data.get("sender", "+91 99887 45210")
+        sender = data.get("sender", "Citizen (WhatsApp Inbound)")
         text = data.get("text", "")
         photo_url = data.get("photo_url", "https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=600&q=80")
         geo = data.get("geo_coords")

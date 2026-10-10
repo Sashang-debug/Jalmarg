@@ -1,677 +1,269 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Crosshair, Camera } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MapPinned, Menu, Navigation, Droplets, ShieldCheck, Settings2, FlaskConical, X, Info, RefreshCw, Sun, Moon, Car } from 'lucide-react'
 import InteractiveMap from './components/InteractiveMap'
-import GoogleMapsSearchBar from './components/GoogleMapsSearchBar'
-import GoogleMapsDirectionsSidebar from './components/GoogleMapsDirectionsSidebar'
-import GoogleMapsMenuDrawer from './components/GoogleMapsMenuDrawer'
-import ReportModal from './components/ReportModal'
-import MunicipalPumpDashboard from './components/MunicipalPumpDashboard'
-import IncidentDetailModal from './components/IncidentDetailModal'
-import GoogleApiKeyModal from './components/GoogleApiKeyModal'
-import ObservabilityModal from './components/ObservabilityModal'
-import AudioRadarDrawer from './components/AudioRadarDrawer'
-import { 
-  MULTI_CITY_INCIDENTS, 
-  MULTI_CITY_POTHOLES, 
-  MULTI_CITY_ROUTES,
-  CITY_CONFIGS,
-  calculateDynamicRoute,
-  calculateHaversineDistance
-} from './data/mockTelemetry'
-import {
-  fetchStreetRoute,
-  findCorridorHazard,
-  calculateDetourWaypoint,
-  VEHICLE_THRESHOLDS
-} from './utils/roadRouter'
+import JourneyPanel from './components/JourneyPanel'
+import ReportComposer from './components/ReportComposer'
+import ReportEvidence from './components/ReportEvidence'
+import OperatorWorkspace from './components/OperatorWorkspace'
+import RouteAudio from './components/RouteAudio'
+import Dialog from './components/Dialog'
+import { CITIES, defaultJourney, cityForPoint } from './utils/cities'
+import { currentPosition, describePoint } from './utils/places'
+import { sampleReports } from './utils/testScenarios'
+import { resolveJourney } from './utils/journeyRouting'
+import CityPicker from './components/CityPicker'
+import MapControls from './components/MapControls'
+import PlaceSearch from './components/PlaceSearch'
+import { isActiveIncident } from './utils/floodRouting'
+import { apiRequest } from './utils/incidentsApi'
+import { completeOperatorLogin } from './utils/operatorAuth'
+import './jalmarg.css'
+import './maps-ui.css'
 
 export default function App() {
-  const [vehicle, setVehicle] = useState('BIKE') // 'BIKE' | 'SEDAN' | 'SUV'
-  const [selectedCity, setSelectedCity] = useState('BLR') // 'BLR' | 'DEL' | 'BOM'
-  const [allIncidents, setAllIncidents] = useState(MULTI_CITY_INCIDENTS)
-  const [showPotholes, setShowPotholes] = useState(true)
-  const [showTraffic, setShowTraffic] = useState(false)
-  const [audioRadarActive, setAudioRadarActive] = useState(false)
+  const [city, setCity] = useState('GWL')
+  const [vehicle, setVehicle] = useState('BIKE')
+  const [origin, setOrigin] = useState(defaultJourney('GWL').origin)
+  const [destination, setDestination] = useState(defaultJourney('GWL').destination)
+  const [incidents, setIncidents] = useState([])
+  const [connection, setConnection] = useState('CONNECTING')
+  const [backend, setBackend] = useState(null)
+  const [lastSync, setLastSync] = useState(null)
+  const [now, setNow] = useState(Date.now())
+  const [route, setRoute] = useState({ status: 'LOADING', candidates: [], selected: null })
+  const [routeRetry, setRouteRetry] = useState(0)
+  const [modal, setModal] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
   const [userLocation, setUserLocation] = useState(null)
-  const [isLocating, setIsLocating] = useState(false)
-  const [isLiveTrackingActive, setIsLiveTrackingActive] = useState(false)
-  const watchIdRef = useRef(null)
-
-  // Google Maps Style Navigation & Sidebar Modes
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true)       // Can be toggled with < / > button
-  const [isMenuOpen, setIsMenuOpen] = useState(false)             // Hamburger menu drawer
-
-  // Google Maps API Key State (from .env or localStorage)
-  const [googleApiKey, setGoogleApiKey] = useState(() => {
-    return import.meta.env.VITE_GOOGLE_MAPS_API_KEY || localStorage.getItem('jalmarg_gmaps_api_key') || ''
-  })
-  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false)
-
-  // Dynamic Navigation Origin and Destination State
-  const [origin, setOrigin] = useState(() => MULTI_CITY_ROUTES.BLR.origin)
-  const [destination, setDestination] = useState(() => MULTI_CITY_ROUTES.BLR.destination)
-  const [pickingMode, setPickingMode] = useState(null) // 'ORIGIN' | 'DESTINATION' | null
-
-  // Real-world street-accurate road geometry state
-  const [realRoadRoute, setRealRoadRoute] = useState(null)
-
-  // Modals
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false)
-  const [isCivicDashboardOpen, setIsCivicDashboardOpen] = useState(false)
-  const [isObservabilityOpen, setIsObservabilityOpen] = useState(false)
-  const [selectedIncident, setSelectedIncident] = useState(null)
-
-  // Current city active telemetry
-  const currentIncidents = allIncidents[selectedCity] || []
-  const currentPotholes = MULTI_CITY_POTHOLES[selectedCity] || []
-
-  // Auto-reset corridor when city changes, preserving user live GPS origin if active
+  const [locating, setLocating] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [pickingMode, setPickingMode] = useState(null)
+  const [googleKey, setGoogleKey] = useState(() => import.meta.env.VITE_GOOGLE_MAPS_API_KEY || localStorage.getItem('jalmarg_gmaps_api_key') || '')
+  const [keyDraft, setKeyDraft] = useState(googleKey)
+  const [operatorToken, setOperatorToken] = useState('')
+  const [tokenExpiry, setTokenExpiry] = useState(null)
+  const [demo, setDemo] = useState(false)
+  const [testScenario, setTestScenario] = useState('flooded')
+  const [testIncidents, setTestIncidents] = useState([])
+  const [panelOpen, setPanelOpen] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+  useEffect(() => { if (menuOpen) menuRef.current?.showModal() }, [menuOpen])
+  const [layersOpen, setLayersOpen] = useState(false)
+  const [showReports, setShowReports] = useState(true)
+  const [theme, setTheme] = useState(() => localStorage.getItem('jalmarg_theme') || 'system')
+  const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  const [layers, setLayers] = useState({ traffic: false, transit: false, terrain: false, satellite: false, labels: true })
+  const effectiveTheme = theme === 'system' ? systemDark ? 'dark' : 'light' : theme
   useEffect(() => {
-    const cityRoute = MULTI_CITY_ROUTES[selectedCity] || MULTI_CITY_ROUTES.BLR
-    setOrigin(prev => {
-      if (prev && prev.name && prev.name.includes('Your location')) return prev
-      return cityRoute.origin
-    })
-    setDestination(cityRoute.destination)
-    setPickingMode(null)
-    setRealRoadRoute(null)
-  }, [selectedCity])
-
-  // Resolve Real Road Network geometry when origin/destination change
+    const media = matchMedia('(prefers-color-scheme: dark)')
+    const change = event => setSystemDark(event.matches)
+    media.addEventListener('change', change)
+    return () => media.removeEventListener('change', change)
+  }, [])
   useEffect(() => {
-    let isCancelled = false
-    async function resolveStreets() {
-      if (!origin || !destination) return
+    document.documentElement.dataset.theme = effectiveTheme
+    localStorage.setItem('jalmarg_theme', theme)
+  }, [theme, effectiveTheme])
 
-      const cityDefaults = MULTI_CITY_ROUTES[selectedCity] || MULTI_CITY_ROUTES.BLR
-      const isDefault =
-        cityDefaults &&
-        Math.abs(origin.lat - cityDefaults.origin.lat) < 0.005 &&
-        Math.abs(origin.lng - cityDefaults.origin.lng) < 0.005 &&
-        Math.abs(destination.lat - cityDefaults.destination.lat) < 0.005 &&
-        Math.abs(destination.lng - cityDefaults.destination.lng) < 0.005
-
-      // For default corridor endpoints, mockTelemetry already has high-res road coordinates
-      if (isDefault) {
-        setRealRoadRoute(null)
-        return
-      }
-
-      // Fetch authentic street road geometry from OSRM
-      const direct = await fetchStreetRoute([origin, destination])
-      if (isCancelled || !direct) return
-
-      const hazard = findCorridorHazard(direct.path, currentIncidents)
-      const limit = VEHICLE_THRESHOLDS[vehicle] || 20
-      const isBlocked = hazard && hazard.depthCm >= limit
-
-      let detour = null
-      if (isBlocked && hazard) {
-        const detourWaypoint = calculateDetourWaypoint(origin, destination, hazard)
-        detour = await fetchStreetRoute([origin, detourWaypoint, destination])
-      }
-
-      if (!isCancelled) {
-        setRealRoadRoute({
-          directPath: direct.path,
-          directDistanceKm: direct.distanceKm,
-          directDurationMins: direct.durationMins,
-          detourPath: detour ? detour.path : direct.path,
-          detourDistanceKm: detour ? detour.distanceKm : direct.distanceKm,
-          detourDurationMins: detour ? detour.durationMins : direct.durationMins,
-          distanceKm: detour ? detour.distanceKm : direct.distanceKm,
-          durationMins: detour ? detour.durationMins : direct.durationMins
-        })
-      }
-    }
-
-    resolveStreets()
-    return () => { isCancelled = true }
-  }, [origin, destination, selectedCity, vehicle, currentIncidents])
-
-  // Real-time Dynamic Flood Clearance Routing Calculation (Snapped to Real Roads)
-  const activeRouteData = calculateDynamicRoute(
-    origin,
-    destination,
-    selectedCity,
-    vehicle,
-    currentIncidents,
-    realRoadRoute
-  )
-
-  const handleSaveApiKey = (newKey) => {
-    setGoogleApiKey(newKey)
-    if (newKey) {
-      localStorage.setItem('jalmarg_gmaps_api_key', newKey)
-    } else {
-      localStorage.removeItem('jalmarg_gmaps_api_key')
-    }
-  }
-
-  // 1. Auto-Fetch GPS Location on Initial Site Load
-  const handleAutoDetectLocation = (centerMap = true) => {
-    if (!navigator.geolocation) {
-      console.warn("Geolocation is not supported by your browser.")
-      return
-    }
-
-    setIsLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const userLat = position.coords.latitude
-        const userLng = position.coords.longitude
-        const acc = Math.round(position.coords.accuracy || 5)
-        const newLoc = {
-          lat: userLat,
-          lng: userLng,
-          name: `Your location (Live GPS ±${acc}m)`,
-          accuracy: acc,
-          shouldFlyTo: centerMap
-        }
-        setUserLocation(newLoc)
-        setOrigin(newLoc)
-
-        // Calculate closest supported metro
-        const distToBlr = Math.hypot(userLat - 12.9716, userLng - 77.5946)
-        const distToDel = Math.hypot(userLat - 28.6139, userLng - 77.2090)
-        const distToBom = Math.hypot(userLat - 19.0760, userLng - 72.8777)
-
-        let closest = 'BLR'
-        if (distToDel < distToBlr && distToDel < distToBom) closest = 'DEL'
-        else if (distToBom < distToBlr && distToBom < distToDel) closest = 'BOM'
-
-        setSelectedCity(closest)
-        setIsLocating(false)
-      },
-      (error) => {
-        console.warn("Geolocation access denied or timed out:", error.message)
-        setIsLocating(false)
-      },
-      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
-    )
-  }
-
-  // 1b. Real-Time Continuous GPS Tracking Toggle
-  const toggleLiveTracking = () => {
-    if (isLiveTrackingActive) {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-        watchIdRef.current = null
-      }
-      setIsLiveTrackingActive(false)
-    } else {
-      if (!navigator.geolocation) {
-        alert("Geolocation is not supported on this device.")
-        return
-      }
-      setIsLocating(true)
-      const id = navigator.geolocation.watchPosition(
-        (position) => {
-          const lat = position.coords.latitude
-          const lng = position.coords.longitude
-          const acc = Math.round(position.coords.accuracy || 5)
-          const liveLoc = {
-            lat,
-            lng,
-            name: `Your location (Live GPS ±${acc}m)`,
-            accuracy: acc,
-            shouldFlyTo: false
-          }
-          setUserLocation(liveLoc)
-          setIsLocating(false)
-          setIsLiveTrackingActive(true)
-
-          // Keep origin dynamically pinned if user selected "Your location"
-          setOrigin(prev => {
-            if (prev?.name?.includes('Your location') || prev?.name?.includes('Live GPS')) {
-              return liveLoc
-            }
-            return prev
-          })
-        },
-        (error) => {
-          console.warn("Continuous GPS watch error:", error.message)
-          setIsLocating(false)
-        },
-        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
-      )
-      watchIdRef.current = id
-      setIsLiveTrackingActive(true)
-    }
-  }
-
-  // Cleanup watcher on component unmount
   useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-      }
-    }
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
-    handleAutoDetectLocation(true)
+    let active = true
+    completeOperatorLogin().then(session => {
+      if (session && active) { setOperatorToken(session.token); setTokenExpiry(session.expiresAt); setModal('operator') }
+    }).catch(err => { if (active) setNotice(err.message) })
+    return () => { active = false }
   }, [])
 
-  // 2. Point Swap and Map Click Handlers
-  const handleSwapPoints = () => {
-    const temp = origin
-    setOrigin(destination)
-    setDestination(temp)
-  }
-
-  const handleMapClick = (latlng) => {
-    const pointName = `📍 Picked Location (${latlng.lat.toFixed(3)}, ${latlng.lng.toFixed(3)})`
-    const newPoint = { lat: latlng.lat, lng: latlng.lng, name: pointName }
-    if (pickingMode === 'ORIGIN') {
-      setOrigin(newPoint)
-    } else if (pickingMode === 'DESTINATION') {
-      setDestination(newPoint)
-      setIsSidebarOpen(true)
-    }
-    setPickingMode(null)
-  }
-
-  // 3. User selects destination from search bar
-  const handleSearchSelectDestination = (dest) => {
-    setDestination(dest)
-    setIsSidebarOpen(true)
-  }
-
-  // 4. Add crowdsourced incident with Autonomous Spatial Consensus & Deduplication Agent
-  const handleAddIncident = (newIncident) => {
-    const targetCity = newIncident.city || selectedCity
-    setAllIncidents(prev => {
-      const cityIncidents = prev[targetCity] || []
-
-      // Check if there is an existing active hazard within 120 meters (0.12 km)
-      const nearbyIndex = cityIncidents.findIndex(inc => {
-        const distKm = calculateHaversineDistance(newIncident.lat, newIncident.lng, inc.lat, inc.lng)
-        return distKm <= 0.12
-      })
-
-      if (nearbyIndex !== -1) {
-        // [SPATIAL CONSENSUS AGENT]: Merge into existing hazard cluster
-        const existing = cityIncidents[nearbyIndex]
-        const newCount = (existing.verificationCount || 1) + 1
-        const maxDepth = Math.max(existing.depthCm, newIncident.depthCm)
-        const updatedSeverity = maxDepth >= 35 ? 'CRITICAL_NO_ENTRY' : 'MODERATE_RISK'
-
-        const updatedIncident = {
-          ...existing,
-          verificationCount: newCount,
-          depthCm: maxDepth,
-          severity: updatedSeverity,
-          author: `Consensus: ${newCount} Commuter Reports`,
-          reportedAt: 'Just now (Updated)',
-          photoUrl: newIncident.photoUrl || existing.photoUrl,
-          photos: [
-            ...(existing.photos || [existing.photoUrl].filter(Boolean)),
-            newIncident.photoUrl
-          ].filter(Boolean),
-          riskDescription: `Multi-Commuter Consensus (${newCount} live camera verifications). Water depth confirmed at ${maxDepth} cm.`,
-          pumpDispatched: existing.pumpDispatched || maxDepth >= 35,
-          pumpStatus: (existing.pumpDispatched || maxDepth >= 35) ? 'PUMP_EN_ROUTE' : 'MONITORING',
-          isConsensusVerified: true
-        }
-
-        const updatedList = [...cityIncidents]
-        updatedList[nearbyIndex] = updatedIncident
-        setSelectedIncident(updatedIncident)
-
-        return {
-          ...prev,
-          [targetCity]: updatedList
-        }
-      } else {
-        // Fresh distinct hazard spot
-        const freshIncident = {
-          ...newIncident,
-          verificationCount: 1,
-          photos: newIncident.photoUrl ? [newIncident.photoUrl] : []
-        }
-        setSelectedIncident(freshIncident)
-
-        return {
-          ...prev,
-          [targetCity]: [freshIncident, ...cityIncidents]
-        }
-      }
-    })
-  }
-
-  // 5. Background Poller for Inbound WhatsApp Webhook Server (Port 5001)
-  const knownWhatsappIncidentIdsRef = useRef(new Set())
   useEffect(() => {
-    let intervalId = null
-    const pollWhatsappServer = async () => {
+    if (tokenExpiry && now >= tokenExpiry && operatorToken) {
+      setOperatorToken(''); setTokenExpiry(null); setNotice('Operator session expired. Sign in again to review reports.')
+    }
+  }, [now, tokenExpiry, operatorToken])
+
+  useEffect(() => {
+    if (demo) return
+    const controller = new AbortController()
+    let active = true
+    let timer
+    async function poll() {
       try {
-        const res = await fetch('http://localhost:5001/api/whatsapp/incidents')
-        if (res.ok) {
-          const data = await res.json()
-          if (Array.isArray(data.incidents)) {
-            data.incidents.forEach(inc => {
-              if (inc.id && !knownWhatsappIncidentIdsRef.current.has(inc.id)) {
-                knownWhatsappIncidentIdsRef.current.add(inc.id)
-                handleAddIncident(inc)
-              }
-            })
-          }
+        const [health, result] = await Promise.all([
+          apiRequest('/health', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) }),
+          apiRequest(`/incidents?city=${city}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) })
+        ])
+        if (!active) return
+        setBackend(health); setConnection('ONLINE'); setLastSync(Date.now())
+        setIncidents(previous => JSON.stringify(previous) === JSON.stringify(result.incidents) ? previous : result.incidents)
+      } catch {
+        if (active) setConnection('OFFLINE')
+      } finally {
+        if (active) timer = setTimeout(poll, 5000)
+      }
+    }
+    poll()
+    return () => { active = false; controller.abort(); clearTimeout(timer) }
+  }, [city, demo])
+
+  const visibleIncidents = demo ? testIncidents : incidents
+  const activeIds = visibleIncidents.filter(i => isActiveIncident(i, now)).map(i => i.id).join(',')
+  const activeIncidents = useMemo(() => {
+    const ids = new Set(activeIds.split(','))
+    return visibleIncidents.filter(i => ids.has(i.id))
+  }, [visibleIncidents, activeIds])
+  // Include only routing-relevant fields so polling and time ticks don't refetch geometry.
+  const incidentSignature = JSON.stringify((demo ? [] : activeIncidents).map(i => [i.id, i.lat, i.lng, i.depthCm, i.status, i.expiresAt]))
+
+  useEffect(() => {
+    const controller = new AbortController()
+    if (!demo && connection !== 'ONLINE') {
+      setRoute({ status: 'UNAVAILABLE', candidates: [], selected: null,
+        error: connection === 'CONNECTING' ? 'Connecting to the shared report service…' : 'The report service is offline. Current road observations cannot be checked.' })
+      return () => controller.abort()
+    }
+    if (!origin || !destination) { setRoute({ status: 'UNAVAILABLE', candidates: [], selected: null, error: 'Choose a starting point and destination.' }); return () => controller.abort() }
+    setRoute({ status: 'LOADING', candidates: [], selected: null })
+    const currentReports = JSON.parse(incidentSignature).map(([id, lat, lng, depthCm, status, expiresAt]) => {
+      const original = incidents.find(i => i.id === id)
+      return { ...original, id, lat, lng, depthCm, status, expiresAt }
+    })
+    async function resolve() {
+      try {
+        let result
+        if (demo) {
+          const baseline = await resolveJourney(origin, destination, [], vehicle, controller.signal, googleKey)
+          const dummy = sampleReports(testScenario, baseline.candidates, city)
+          if (controller.signal.aborted) return
+          setTestIncidents(dummy)
+          result = testScenario === 'clear' || testScenario === 'cleared' ? baseline : await resolveJourney(origin, destination, dummy, vehicle, controller.signal, googleKey)
+        } else result = await resolveJourney(origin, destination, currentReports, vehicle, controller.signal, googleKey)
+        if (!controller.signal.aborted) {
+          const fastest = [...result.candidates].sort((a, b) => a.durationMins - b.durationMins)[0]
+          setRoute({ ...result, fastest })
         }
       } catch (err) {
-        // Webhook server offline or unreachable; silently continue
+        if (!controller.signal.aborted) setRoute({ status: 'UNAVAILABLE', candidates: [], selected: null, error: err.message })
       }
     }
+    resolve()
+    return () => controller.abort()
+    // Reports are represented by incidentSignature; geometry is fetched only when
+    // endpoints, vehicle, connectivity, or active observations actually change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [origin, destination, city, vehicle, incidentSignature, connection, demo, routeRetry, testScenario, googleKey])
 
-    intervalId = setInterval(pollWhatsappServer, 3000)
-    pollWhatsappServer()
-
-    return () => {
-      if (intervalId) clearInterval(intervalId)
+  function changeCity(value) {
+    const journey = defaultJourney(value)
+    setCity(value); setOrigin(journey.origin); setDestination(journey.destination)
+    setIncidents([]); setTestIncidents([]); setConnection('CONNECTING'); setSelectedId(null); setPickingMode(null); setUserLocation(null)
+  }
+  function toggleDemo(value) {
+    setDemo(value); setSelectedId(null); setTestIncidents([]); setPickingMode(null); setPanelOpen(true)
+    if (!value) setConnection('CONNECTING')
+  }
+  function applyLocated(place, changeOrigin = true) {
+    const localCity = cityForPoint(place)
+    if (localCity !== city) {
+      setCity(localCity); setIncidents([]); setConnection('CONNECTING')
+      setDestination(defaultJourney(localCity).destination)
     }
-  }, [selectedCity])
-
-  // 5. Dispatch de-watering pump unit
-  const handleDispatchPump = (incidentId) => {
-    setAllIncidents(prev => ({
-      ...prev,
-      [selectedCity]: prev[selectedCity].map(inc => {
-        if (inc.id === incidentId) {
-          return {
-            ...inc,
-            pumpDispatched: true,
-            pumpStatus: 'PUMP_EN_ROUTE'
-          }
-        }
-        return inc
-      })
-    }))
+    setUserLocation(place)
+    if (changeOrigin) setOrigin({ ...place, name: 'Your current location', address: place.address || place.name })
   }
-
-  // 6. Resolve / Clear incident (water receded or municipal de-watering complete)
-  const handleResolveIncident = (incidentId) => {
-    setAllIncidents(prev => ({
-      ...prev,
-      [selectedCity]: (prev[selectedCity] || []).filter(inc => inc.id !== incidentId)
-    }))
-    setSelectedIncident(null)
+  async function locate() {
+    if (demo) { setNotice('Switch to live reports to use your current location.'); return }
+    setLocating(true)
+    try {
+      const gps = await currentPosition()
+      const place = await describePoint(gps, googleKey)
+      applyLocated(place)
+      setNotice(`Location set in ${CITIES[cityForPoint(place)].name}. Choose your destination.`)
+    } catch (err) { setNotice(err.message) }
+    finally { setLocating(false) }
   }
+  const handleMapClick = useCallback(async point => {
+    const mode = pickingMode
+    setPickingMode(null)
+    const localCity = cityForPoint(point)
+    if (mode === 'ORIGIN' && localCity !== city) { setCity(localCity); setIncidents([]); setConnection('CONNECTING'); setDestination(defaultJourney(localCity).destination) }
+    const selected = { ...point, city: localCity, name: mode === 'ORIGIN' ? 'Selected starting point' : 'Selected destination' }
+    if (mode === 'ORIGIN') setOrigin(selected)
+    if (mode === 'DESTINATION') setDestination(selected)
+    setPanelOpen(true)
+    // Keep selection immediately usable; address lookup is optional.
+  }, [pickingMode, city])
+  function selectOrigin(point) {
+    if (!point) { setOrigin(null); return }
+    const localCity = cityForPoint(point)
+    if (localCity !== city) { setCity(localCity); setIncidents([]); setConnection('CONNECTING'); setDestination(defaultJourney(localCity).destination) }
+    setOrigin(point)
+  }
+  const viewIncident = useCallback(incident => setSelectedId(incident.id), [])
+  function updateIncident(item) {
+    setIncidents(previous => [item, ...previous.filter(i => i.id !== item.id)])
+  }
+  const selectedIncident = visibleIncidents.find(i => i.id === selectedId)
+  const mapRoute = useMemo(() => ({ ...route, directPath: route.selected?.path || route.candidates?.[0]?.path || [],
+    detourPath: route.selected?.path || [], isDetourRequired: false, avoidedHazardPath: [] }), [route])
 
-  const activePumpTicketsCount = currentIncidents.filter(i => i.depthCm >= 25 && !i.pumpDispatched).length
-
-  return (
-    <div style={{
-      width: '100vw',
-      height: '100vh',
-      overflow: 'hidden',
-      position: 'relative',
-      margin: 0,
-      padding: 0,
-      background: '#E8EAED',
-      fontFamily: 'Roboto, Arial, sans-serif'
-    }}>
-      {/* ============================================================== */}
-      {/* 1. FULLSCREEN MAP (100% WIDTH, 100% HEIGHT, EDGE-TO-EDGE)       */}
-      {/* ============================================================== */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: 1
-      }}>
-        <InteractiveMap
-          selectedCity={selectedCity}
-          incidents={currentIncidents}
-          potholes={currentPotholes}
-          showPotholes={showPotholes}
-          showTraffic={showTraffic}
-          vehicle={vehicle}
-          activeRoute={activeRouteData}
-          userLocation={userLocation}
-          origin={origin}
-          destination={destination}
-          onSelectIncident={(inc) => setSelectedIncident(inc)}
-          pickingMode={pickingMode}
-          onMapClick={handleMapClick}
-          googleApiKey={googleApiKey}
-        />
-      </div>
-
-      {/* Floating Google Maps Style Location & Report Action Controls */}
-      <div style={{
-        position: 'absolute',
-        bottom: '24px',
-        right: '16px',
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-end',
-        gap: '10px',
-        pointerEvents: 'none'
-      }}>
-        {/* Floating Live Tracking HUD if active */}
-        {isLiveTrackingActive && userLocation && (
-          <div style={{
-            background: 'rgba(15, 23, 42, 0.94)',
-            backdropFilter: 'blur(8px)',
-            border: '1.5px solid #1A73E8',
-            borderRadius: '24px',
-            padding: '6px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-            fontSize: '12px',
-            color: '#FFFFFF',
-            pointerEvents: 'auto'
-          }}>
-            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }} className="pulse-radar" />
-            <span style={{ fontWeight: 600 }}>Live GPS Tracking: {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)} (±{userLocation.accuracy || 5}m)</span>
-            <button
-              onClick={toggleLiveTracking}
-              id="btn-hud-stop-tracking"
-              style={{
-                background: 'rgba(255,255,255,0.18)',
-                border: 'none',
-                color: '#E2E8F0',
-                borderRadius: '10px',
-                padding: '2px 8px',
-                fontSize: '10px',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              Stop
-            </button>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto' }}>
-          {/* Quick Report Flood Floating Button */}
-          <button
-            onClick={() => setIsReportModalOpen(true)}
-            id="btn-fab-report-flood"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: '#D93025',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '24px',
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: 700,
-              boxShadow: '0 3px 12px rgba(217, 48, 37, 0.4)',
-              cursor: 'pointer',
-              transition: 'transform 0.15s, background 0.15s'
-            }}
-            title="Upload real-time photo of waterlogging"
-          >
-            <Camera size={16} />
-            <span>Report Flood</span>
-          </button>
-
-          {/* Google Maps Style My Location / Live Tracking FAB */}
-          <button
-            onClick={toggleLiveTracking}
-            id="btn-fab-my-location"
-            style={{
-              width: '46px',
-              height: '46px',
-              borderRadius: '50%',
-              background: '#FFFFFF',
-              border: isLiveTrackingActive ? '2px solid #1A73E8' : '1px solid rgba(0,0,0,0.15)',
-              boxShadow: isLiveTrackingActive ? '0 0 16px rgba(26, 115, 232, 0.6)' : '0 2px 8px rgba(0,0,0,0.25)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              position: 'relative'
-            }}
-            title={isLiveTrackingActive ? 'Live GPS Tracking Active (Click to stop)' : 'Trace Current Location & Follow Me'}
-          >
-            <Crosshair size={22} color={isLiveTrackingActive ? '#1A73E8' : '#5F6368'} className={isLocating ? 'spin-icon' : ''} />
-            {isLiveTrackingActive && (
-              <span style={{
-                position: 'absolute',
-                top: '-2px',
-                right: '-2px',
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                background: '#10B981',
-                border: '2px solid #FFFFFF'
-              }} />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* ============================================================== */}
-      {/* 2. FLOATING TOP SEARCH BAR (When Sidebar is Collapsed)          */}
-      {/* ============================================================== */}
-      {!isSidebarOpen && (
-        <GoogleMapsSearchBar
-          selectedCity={selectedCity}
-          onOpenDirections={() => setIsSidebarOpen(true)}
-          onSelectDestination={handleSearchSelectDestination}
-          onToggleMenu={() => setIsMenuOpen(true)}
-          vehicle={vehicle}
-          setVehicle={setVehicle}
-          showPotholes={showPotholes}
-          setShowPotholes={setShowPotholes}
-          audioRadarActive={audioRadarActive}
-          setAudioRadarActive={setAudioRadarActive}
-          showTraffic={showTraffic}
-          setShowTraffic={setShowTraffic}
-          onOpenReportModal={() => setIsReportModalOpen(true)}
-          onAutoDetectLocation={handleAutoDetectLocation}
-        />
-      )}
-
-      {/* ============================================================== */}
-      {/* 3. GOOGLE MAPS DIRECTIONS SIDEBAR (Always Mounted, Collapsible) */}
-      {/* ============================================================== */}
-      <GoogleMapsDirectionsSidebar
-        isOpen={isSidebarOpen}
-        onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
-        onCloseDirections={() => setIsSidebarOpen(false)}
-        origin={origin}
-        destination={destination}
-        onSelectOrigin={(pt) => setOrigin(pt)}
-        onSelectDestination={(pt) => setDestination(pt)}
-        onSwapPoints={handleSwapPoints}
-        onAutoDetectLocation={handleAutoDetectLocation}
-        vehicle={vehicle}
-        setVehicle={setVehicle}
-        routeData={activeRouteData}
-        selectedCity={selectedCity}
-        onOpenReportModal={() => setIsReportModalOpen(true)}
-        onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
-        onOpenObservability={() => setIsObservabilityOpen(true)}
-        activePumpTicketsCount={activePumpTicketsCount}
-        showPotholes={showPotholes}
-        setShowPotholes={setShowPotholes}
-        showTraffic={showTraffic}
-        setShowTraffic={setShowTraffic}
-        audioRadarActive={audioRadarActive}
-        setAudioRadarActive={setAudioRadarActive}
-        onPickOnMap={(mode) => setPickingMode(mode)}
-      />
-
-      {/* ============================================================== */}
-      {/* 4. HAMBURGER MENU DRAWER (Google Maps Style)                   */}
-      {/* ============================================================== */}
-      <GoogleMapsMenuDrawer
-        isOpen={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        isSidebarOpen={isSidebarOpen}
-        onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
-        selectedCity={selectedCity}
-        setSelectedCity={setSelectedCity}
-        showTraffic={showTraffic}
-        setShowTraffic={setShowTraffic}
-        showPotholes={showPotholes}
-        setShowPotholes={setShowPotholes}
-        audioRadarActive={audioRadarActive}
-        setAudioRadarActive={setAudioRadarActive}
-        onOpenReportModal={() => setIsReportModalOpen(true)}
-        onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
-        onOpenObservability={() => setIsObservabilityOpen(true)}
-        onOpenKeyModal={() => setIsKeyModalOpen(true)}
-        activePumpTicketsCount={activePumpTicketsCount}
-        googleApiKey={googleApiKey}
-      />
-
-      {/* ============================================================== */}
-      {/* 5. MODALS & DIALOGS (Report, Civic Pumps, Key Settings)         */}
-      {/* ============================================================== */}
-      <ReportModal
-        isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        onAddIncident={handleAddIncident}
-        userLocation={userLocation}
-        selectedCity={selectedCity}
-        onAutoDetectLocation={handleAutoDetectLocation}
-      />
-
-      <MunicipalPumpDashboard
-        isOpen={isCivicDashboardOpen}
-        onClose={() => setIsCivicDashboardOpen(false)}
-        incidents={currentIncidents}
-        onDispatchPump={handleDispatchPump}
-        onResolveIncident={handleResolveIncident}
-      />
-
-      <ObservabilityModal
-        isOpen={isObservabilityOpen}
-        onClose={() => setIsObservabilityOpen(false)}
-      />
-
-      <IncidentDetailModal
-        incident={selectedIncident}
-        onClose={() => setSelectedIncident(null)}
-        onDispatchPump={handleDispatchPump}
-        onResolveIncident={handleResolveIncident}
-      />
-
-      <GoogleApiKeyModal
-        isOpen={isKeyModalOpen}
-        onClose={() => setIsKeyModalOpen(false)}
-        currentApiKey={googleApiKey}
-        onSaveApiKey={handleSaveApiKey}
-      />
-
-      {/* 6. HANDS-FREE AUDIO RADAR DRAWER */}
-      <AudioRadarDrawer
-        active={audioRadarActive}
-        onClose={() => setAudioRadarActive(false)}
-        routeData={activeRouteData}
-        isSidebarOpen={isSidebarOpen}
-        selectedCity={selectedCity}
-      />
+  return <main className={`jalmarg-app maps-app ${panelOpen ? 'panel-open' : 'panel-closed'}`}>
+    <nav className="map-rail" aria-label="Main navigation"><a className="maps-brand" href="/" aria-label="JalMarg home"><MapPinned size={29} /><strong>JalMarg</strong></a>
+      <button aria-label="Open main menu" onClick={() => setMenuOpen(true)}><Menu size={23} /><span>Menu</span></button>
+      <button className={panelOpen ? 'active' : ''} aria-pressed={panelOpen} onClick={() => setPanelOpen(value => !value)}><Navigation size={23} /><span>Directions</span></button>
+      <button aria-pressed={demo} className={demo ? 'active' : ''} onClick={() => toggleDemo(!demo)}><FlaskConical size={23} /><span>Test routes</span></button>
+      <button onClick={() => { setModal('operator') }}><ShieldCheck size={23} /><span>Operator</span></button>
+      <div className="rail-bottom"><button aria-label={effectiveTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} onClick={() => setTheme(effectiveTheme === 'light' ? 'dark' : 'light')}>{effectiveTheme === 'light' ? <Moon size={23} /> : <Sun size={23} />}<span>Theme</span></button>
+        <button aria-label="Map and connection settings" onClick={() => { setKeyDraft(googleKey); setModal('settings') }}><Settings2 size={22} /><span>Settings</span></button></div>
+    </nav>
+    <div className="workspace">
+      <section className="map-workspace" aria-label="Journey map"><InteractiveMap selectedCity={city} incidents={showReports ? activeIncidents : []} activeRoute={mapRoute}
+        origin={origin} destination={destination} vehicle={vehicle} userLocation={userLocation} pickingMode={pickingMode} onMapClick={handleMapClick}
+        onSelectIncident={viewIncident} googleApiKey={googleKey} theme={effectiveTheme} layers={layers} panelOpen={panelOpen} />
+        <div className="map-topbar"><button className="mobile-menu icon-button" aria-label="Open main menu" onClick={() => setMenuOpen(true)}><Menu size={23} /></button>
+          {!panelOpen && <div className="map-explore-search"><MapPinned size={24} /><PlaceSearch label="Search places" placeholder="Search JalMarg" city={city} bias={userLocation || origin} apiKey={googleKey} onSelect={point => { setDestination(point); if (!origin || cityForPoint(point) !== city) selectOrigin(defaultJourney(cityForPoint(point)).origin || point); setDestination(point); setPanelOpen(true) }} />
+            <button className="icon-button" aria-label="Open directions" onClick={() => setPanelOpen(true)}><Navigation size={23} /></button></div>}
+          <div className="map-chips"><button aria-pressed={showReports} className={showReports ? 'selected' : ''} onClick={() => setShowReports(value => !value)}><Droplets size={17} />Waterlogging</button>
+            <button aria-pressed={layers.traffic} disabled={!googleKey} onClick={() => setLayers(previous => ({ ...previous, traffic: !previous.traffic }))}><Car size={17} />Traffic</button>
+            <button aria-pressed={demo} className={demo ? 'test-active' : ''} onClick={() => toggleDemo(!demo)}><FlaskConical size={17} />{demo ? 'Exit test lab' : 'Test routes'}</button></div>
+          <CityPicker value={city} onChange={changeCity} /></div>
+        <div className={`connection-pill ${demo ? 'recorded' : connection.toLowerCase()}`} role="status"><span />{demo ? 'TEST MODE: dummy waterlogging, real streets' : connection === 'ONLINE' ? `Live reports connected${backend?.mode === 'aws' ? ' to AWS' : ''}` : connection === 'CONNECTING' ? 'Connecting to reports…' : 'Report service offline'}
+          <button aria-label="About the report service" onClick={() => setModal('about')}><Info size={15} /></button></div>
+        {pickingMode && <div className="map-pick-prompt" role="status">Tap the road to choose your {pickingMode === 'ORIGIN' ? 'starting point' : 'destination'}<button className="icon-button" aria-label="Cancel map picking" onClick={() => setPickingMode(null)}><X size={19} /></button></div>}
+        <MapControls open={layersOpen} onOpen={setLayersOpen} theme={theme} onTheme={setTheme} layers={layers} onLayers={setLayers} google={Boolean(googleKey)} onLocate={locate} locating={locating} />
+        {route.status === 'UNAVAILABLE' && connection === 'ONLINE' && origin && destination && <button className="retry-routing secondary-button" onClick={() => setRouteRetry(v => v + 1)}><RefreshCw size={16} />Retry routing</button>}
+      </section>
+      {panelOpen && <JourneyPanel city={city} origin={origin} destination={destination} onOrigin={selectOrigin} onDestination={setDestination}
+        onSwap={() => { setOrigin(destination); setDestination(origin) }} onPick={mode => { setPickingMode(mode); if (innerWidth < 768) setPanelOpen(false) }}
+        vehicle={vehicle} onVehicle={setVehicle} route={route} locating={locating} onLocate={locate} incidents={activeIncidents}
+        onReport={() => setModal('report')} onViewEvidence={viewIncident} onAudio={() => setModal('audio')} demo={demo} now={now}
+        apiKey={googleKey} scenario={testScenario} onScenario={setTestScenario} onClose={() => setPanelOpen(false)} />}
+      {!panelOpen && <md-filled-button className="floating-report" onClick={() => setModal('report')}><Droplets slot="icon" size={18} />Report waterlogging</md-filled-button>}
     </div>
-  )
+    {menuOpen && <dialog ref={menuRef} className="menu-backdrop" aria-label="Navigation menu" onCancel={() => setMenuOpen(false)} onClick={event => { if (event.target === event.currentTarget) setMenuOpen(false) }}><aside className="maps-menu" aria-label="Main menu" onClick={event => event.stopPropagation()}><header><a className="menu-brand" href="/"><MapPinned size={28} />JalMarg</a><button className="icon-button" aria-label="Close main menu" onClick={() => setMenuOpen(false)}><X size={23} /></button></header>
+      <p>Waterlogging-aware journeys</p><button onClick={() => { setPanelOpen(value => !value); setMenuOpen(false) }}><Navigation size={20} />{panelOpen ? 'Hide directions' : 'Show directions'}</button>
+      <button onClick={() => { toggleDemo(!demo); setMenuOpen(false) }}><FlaskConical size={20} />{demo ? 'Return to live reports' : 'Try dummy route scenarios'}</button>
+      <button onClick={() => { setModal('operator'); setMenuOpen(false) }}><ShieldCheck size={20} />Operator workspace</button>
+      <button onClick={() => { setLayersOpen(true); setMenuOpen(false) }}><Sun size={20} />Layers and appearance</button>
+      <button onClick={() => { setKeyDraft(googleKey); setModal('settings'); setMenuOpen(false) }}><Settings2 size={20} />Connection settings</button>
+      <button onClick={() => { setModal('about'); setMenuOpen(false) }}><Info size={20} />About JalMarg</button></aside></dialog>}
+    {notice && <div className="app-notice" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={17} /></button></div>}
+    {modal === 'report' && <ReportComposer city={city} userLocation={userLocation} demo={demo} apiKey={googleKey} theme={effectiveTheme} onLocated={applyLocated} onClose={() => setModal(null)} onSaved={item => { if (item.city !== city) { setCity(item.city); setIncidents([]); setConnection('CONNECTING') }; updateIncident(item) }} />}
+    {modal === 'operator' && <OperatorWorkspace incidents={visibleIncidents} mode={backend?.mode || 'aws'} token={operatorToken} onToken={setOperatorToken}
+      onClose={() => setModal(null)} onChanged={updateIncident} onViewEvidence={viewIncident} demo={demo} />}
+    {selectedIncident && <ReportEvidence incident={selectedIncident} demo={demo} onClose={() => setSelectedId(null)} onChanged={updateIncident} vehicle={vehicle} />}
+    {modal === 'audio' && <RouteAudio route={route} vehicle={vehicle} origin={origin} destination={destination} demo={demo} onClose={() => setModal(null)} />}
+    {modal === 'settings' && <Dialog title="Map settings" subtitle="The map provider does not change the report data source." onClose={() => setModal(null)}>
+      <form onSubmit={event => { event.preventDefault(); setGoogleKey(keyDraft.trim()); localStorage.setItem('jalmarg_gmaps_api_key', keyDraft.trim()); setModal(null) }}>
+        <label>Google Maps browser API key <span className="muted">Optional</span><input value={keyDraft} onChange={e => setKeyDraft(e.target.value)} autoComplete="off" placeholder="Leave empty to use the default map" /></label>
+        <p className="help-text">Use a key restricted to this website and the Maps JavaScript API. Changing an already-loaded Google key requires a page reload.</p><button className="primary-button">Save map settings</button></form>
+    </Dialog>}
+    {modal === 'about' && <Dialog title="Behind the reports" subtitle="What this session is actually connected to." onClose={() => setModal(null)}>
+      <dl className="system-facts"><div><dt>Data mode</dt><dd>{demo ? 'Dummy reports on real street routes' : 'Shared live observations'}</dd></div><div><dt>Backend</dt><dd>{backend?.storage || 'No backend connection established'}</dd></div><div><dt>Last successful sync</dt><dd>{lastSync ? `${Math.floor((now - lastSync) / 1000)} seconds ago` : 'Not yet connected'}</dd></div><div><dt>Update interval</dt><dd>5 seconds after each completed request</dd></div><div><dt>Verification</dt><dd>Authenticated operator review; citizen levels are approximate</dd></div></dl>
+      <p className="info-box">This prototype does not measure depth from image pixels, predict floods, or dispatch municipal equipment. The route engine compares street geometry with reported observations.</p>
+    </Dialog>}
+  </main>
 }
