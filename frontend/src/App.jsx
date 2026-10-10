@@ -280,8 +280,9 @@ export default function App() {
 
   // 4. Add crowdsourced incident with Autonomous Spatial Consensus & Deduplication Agent
   const handleAddIncident = (newIncident) => {
+    const targetCity = newIncident.city || selectedCity
     setAllIncidents(prev => {
-      const cityIncidents = prev[selectedCity] || []
+      const cityIncidents = prev[targetCity] || []
 
       // Check if there is an existing active hazard within 120 meters (0.12 km)
       const nearbyIndex = cityIncidents.findIndex(inc => {
@@ -320,7 +321,7 @@ export default function App() {
 
         return {
           ...prev,
-          [selectedCity]: updatedList
+          [targetCity]: updatedList
         }
       } else {
         // Fresh distinct hazard spot
@@ -333,11 +334,42 @@ export default function App() {
 
         return {
           ...prev,
-          [selectedCity]: [freshIncident, ...cityIncidents]
+          [targetCity]: [freshIncident, ...cityIncidents]
         }
       }
     })
   }
+
+  // 5. Background Poller for Inbound WhatsApp Webhook Server (Port 5001)
+  const knownWhatsappIncidentIdsRef = useRef(new Set())
+  useEffect(() => {
+    let intervalId = null
+    const pollWhatsappServer = async () => {
+      try {
+        const res = await fetch('http://localhost:5001/api/whatsapp/incidents')
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data.incidents)) {
+            data.incidents.forEach(inc => {
+              if (inc.id && !knownWhatsappIncidentIdsRef.current.has(inc.id)) {
+                knownWhatsappIncidentIdsRef.current.add(inc.id)
+                handleAddIncident(inc)
+              }
+            })
+          }
+        }
+      } catch (err) {
+        // Webhook server offline or unreachable; silently continue
+      }
+    }
+
+    intervalId = setInterval(pollWhatsappServer, 3000)
+    pollWhatsappServer()
+
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [selectedCity])
 
   // 5. Dispatch de-watering pump unit
   const handleDispatchPump = (incidentId) => {
