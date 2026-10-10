@@ -4,7 +4,6 @@ import InteractiveMap from './components/InteractiveMap'
 import JourneyPanel from './components/JourneyPanel'
 import ReportComposer from './components/ReportComposer'
 import ReportEvidence from './components/ReportEvidence'
-import OperatorWorkspace from './components/OperatorWorkspace'
 import RouteAudio from './components/RouteAudio'
 import Dialog from './components/Dialog'
 import { CITIES, defaultJourney, cityForPoint } from './utils/cities'
@@ -16,11 +15,11 @@ import MapControls from './components/MapControls'
 import PlaceSearch from './components/PlaceSearch'
 import { isActiveIncident } from './utils/floodRouting'
 import { apiRequest } from './utils/incidentsApi'
-import { completeOperatorLogin } from './utils/operatorAuth'
 import './jalmarg.css'
 import './maps-ui.css'
 
-export default function App() {
+export default function App({ session, profile, navigate }) {
+  function report() { if (!session) { navigate("signin"); return }; setModal("report") }
   const [city, setCity] = useState('GWL')
   const [vehicle, setVehicle] = useState('BIKE')
   const [origin, setOrigin] = useState(defaultJourney('GWL').origin)
@@ -40,8 +39,6 @@ export default function App() {
   const [pickingMode, setPickingMode] = useState(null)
   const [googleKey, setGoogleKey] = useState(() => import.meta.env.VITE_GOOGLE_MAPS_API_KEY || localStorage.getItem('jalmarg_gmaps_api_key') || '')
   const [keyDraft, setKeyDraft] = useState(googleKey)
-  const [operatorToken, setOperatorToken] = useState('')
-  const [tokenExpiry, setTokenExpiry] = useState(null)
   const [demo, setDemo] = useState(false)
   const [testScenario, setTestScenario] = useState('flooded')
   const [testIncidents, setTestIncidents] = useState([])
@@ -71,19 +68,6 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  useEffect(() => {
-    let active = true
-    completeOperatorLogin().then(session => {
-      if (session && active) { setOperatorToken(session.token); setTokenExpiry(session.expiresAt); setModal('operator') }
-    }).catch(err => { if (active) setNotice(err.message) })
-    return () => { active = false }
-  }, [])
-
-  useEffect(() => {
-    if (tokenExpiry && now >= tokenExpiry && operatorToken) {
-      setOperatorToken(''); setTokenExpiry(null); setNotice('Operator session expired. Sign in again to review reports.')
-    }
-  }, [now, tokenExpiry, operatorToken])
 
   useEffect(() => {
     if (demo) return
@@ -211,11 +195,11 @@ export default function App() {
     detourPath: route.selected?.path || [], isDetourRequired: false, avoidedHazardPath: [] }), [route])
 
   return <main className={`jalmarg-app maps-app ${panelOpen ? 'panel-open' : 'panel-closed'}`}>
-    <nav className="map-rail" aria-label="Main navigation"><a className="maps-brand" href="/" aria-label="JalMarg home"><MapPinned size={29} /><strong>JalMarg</strong></a>
+    <nav className="map-rail" aria-label="Main navigation"><a className="maps-brand" href="#/" aria-label="JalMarg home"><MapPinned size={29} /><strong>JalMarg</strong></a>
       <button aria-label="Open main menu" onClick={() => setMenuOpen(true)}><Menu size={23} /><span>Menu</span></button>
       <button className={panelOpen ? 'active' : ''} aria-pressed={panelOpen} onClick={() => setPanelOpen(value => !value)}><Navigation size={23} /><span>Directions</span></button>
       <button aria-pressed={demo} className={demo ? 'active' : ''} onClick={() => toggleDemo(!demo)}><FlaskConical size={23} /><span>Test routes</span></button>
-      <button onClick={() => { setModal('operator') }}><ShieldCheck size={23} /><span>Operator</span></button>
+      <button onClick={() => navigate(profile?.role === "MUNICIPAL" ? "municipal" : session ? "account" : "signin")}><ShieldCheck size={23} /><span>{profile?.role === "MUNICIPAL" ? "Municipal" : "Account"}</span></button>
       <div className="rail-bottom"><button aria-label={effectiveTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} onClick={() => setTheme(effectiveTheme === 'light' ? 'dark' : 'light')}>{effectiveTheme === 'light' ? <Moon size={23} /> : <Sun size={23} />}<span>Theme</span></button>
         <button aria-label="Map and connection settings" onClick={() => { setKeyDraft(googleKey); setModal('settings') }}><Settings2 size={22} /><span>Settings</span></button></div>
     </nav>
@@ -239,22 +223,20 @@ export default function App() {
       {panelOpen && <JourneyPanel city={city} origin={origin} destination={destination} onOrigin={selectOrigin} onDestination={setDestination}
         onSwap={() => { setOrigin(destination); setDestination(origin) }} onPick={mode => { setPickingMode(mode); if (innerWidth < 768) setPanelOpen(false) }}
         vehicle={vehicle} onVehicle={setVehicle} route={route} locating={locating} onLocate={locate} incidents={activeIncidents}
-        onReport={() => setModal('report')} onViewEvidence={viewIncident} onAudio={() => setModal('audio')} demo={demo} now={now}
+        onReport={report} onViewEvidence={viewIncident} onAudio={() => setModal('audio')} demo={demo} now={now}
         apiKey={googleKey} scenario={testScenario} onScenario={setTestScenario} onClose={() => setPanelOpen(false)} />}
-      {!panelOpen && <md-filled-button className="floating-report" onClick={() => setModal('report')}><Droplets slot="icon" size={18} />Report waterlogging</md-filled-button>}
+      {!panelOpen && <md-filled-button className="floating-report" onClick={report}><Droplets slot="icon" size={18} />Report waterlogging</md-filled-button>}
     </div>
     {menuOpen && <dialog ref={menuRef} className="menu-backdrop" aria-label="Navigation menu" onCancel={() => setMenuOpen(false)} onClick={event => { if (event.target === event.currentTarget) setMenuOpen(false) }}><aside className="maps-menu" aria-label="Main menu" onClick={event => event.stopPropagation()}><header><a className="menu-brand" href="/"><MapPinned size={28} />JalMarg</a><button className="icon-button" aria-label="Close main menu" onClick={() => setMenuOpen(false)}><X size={23} /></button></header>
       <p>Waterlogging-aware journeys</p><button onClick={() => { setPanelOpen(value => !value); setMenuOpen(false) }}><Navigation size={20} />{panelOpen ? 'Hide directions' : 'Show directions'}</button>
       <button onClick={() => { toggleDemo(!demo); setMenuOpen(false) }}><FlaskConical size={20} />{demo ? 'Return to live reports' : 'Try dummy route scenarios'}</button>
-      <button onClick={() => { setModal('operator'); setMenuOpen(false) }}><ShieldCheck size={20} />Operator workspace</button>
+      <button onClick={() => { navigate(profile?.role === 'MUNICIPAL' ? 'municipal' : session ? 'account' : 'signin'); setMenuOpen(false) }}><ShieldCheck size={20} />Account and municipal workspace</button>
       <button onClick={() => { setLayersOpen(true); setMenuOpen(false) }}><Sun size={20} />Layers and appearance</button>
       <button onClick={() => { setKeyDraft(googleKey); setModal('settings'); setMenuOpen(false) }}><Settings2 size={20} />Connection settings</button>
       <button onClick={() => { setModal('about'); setMenuOpen(false) }}><Info size={20} />About JalMarg</button></aside></dialog>}
     {notice && <div className="app-notice" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={17} /></button></div>}
-    {modal === 'report' && <ReportComposer city={city} userLocation={userLocation} demo={demo} apiKey={googleKey} theme={effectiveTheme} onLocated={applyLocated} onClose={() => setModal(null)} onSaved={item => { if (item.city !== city) { setCity(item.city); setIncidents([]); setConnection('CONNECTING') }; updateIncident(item) }} />}
-    {modal === 'operator' && <OperatorWorkspace incidents={visibleIncidents} mode={backend?.mode || 'aws'} token={operatorToken} onToken={setOperatorToken}
-      onClose={() => setModal(null)} onChanged={updateIncident} onViewEvidence={viewIncident} demo={demo} />}
-    {selectedIncident && <ReportEvidence incident={selectedIncident} demo={demo} onClose={() => setSelectedId(null)} onChanged={updateIncident} vehicle={vehicle} />}
+    {modal === 'report' && <ReportComposer session={session} city={city} userLocation={userLocation} demo={demo} apiKey={googleKey} theme={effectiveTheme} onLocated={applyLocated} onClose={() => setModal(null)} onSaved={item => { if (item.city !== city) { setCity(item.city); setIncidents([]); setConnection('CONNECTING') }; updateIncident(item) }} />}
+    {selectedIncident && <ReportEvidence session={session} incident={selectedIncident} demo={demo} onClose={() => setSelectedId(null)} onChanged={updateIncident} vehicle={vehicle} />}
     {modal === 'audio' && <RouteAudio route={route} vehicle={vehicle} origin={origin} destination={destination} demo={demo} onClose={() => setModal(null)} />}
     {modal === 'settings' && <Dialog title="Map settings" subtitle="The map provider does not change the report data source." onClose={() => setModal(null)}>
       <form onSubmit={event => { event.preventDefault(); setGoogleKey(keyDraft.trim()); localStorage.setItem('jalmarg_gmaps_api_key', keyDraft.trim()); setModal(null) }}>

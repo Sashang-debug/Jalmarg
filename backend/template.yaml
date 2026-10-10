@@ -12,7 +12,7 @@ Parameters:
     AllowedPattern: 'https?://[^/]+(:[0-9]+)?'
 Globals:
   Function:
-    Runtime: python3.12
+    Runtime: python3.14
     Timeout: 30
     MemorySize: 256
     Tracing: Active
@@ -21,6 +21,7 @@ Globals:
         TABLE_NAME: !Ref JalMargIncidentsTable
         BUCKET_NAME: !Ref JalMargEvidenceBucket
         ALLOWED_ORIGIN: !Ref FrontendOrigin
+        USER_POOL_ID: !Ref OperatorPool
 Resources:
   JalMargIncidentsTable:
     Type: AWS::DynamoDB::Table
@@ -35,9 +36,20 @@ Resources:
       AttributeDefinitions:
         - {AttributeName: PK, AttributeType: S}
         - {AttributeName: SK, AttributeType: S}
+        - {AttributeName: ownerSub, AttributeType: S}
+        - {AttributeName: createdAt, AttributeType: S}
+        - {AttributeName: directoryCity, AttributeType: S}
+        - {AttributeName: id, AttributeType: S}
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: CitizenReports
+          KeySchema: [{AttributeName: ownerSub, KeyType: HASH}, {AttributeName: createdAt, KeyType: RANGE}]
+          Projection: {ProjectionType: ALL}
+        - IndexName: MunicipalDirectory
+          KeySchema: [{AttributeName: directoryCity, KeyType: HASH}, {AttributeName: id, KeyType: RANGE}]
+          Projection: {ProjectionType: ALL}
       TimeToLiveSpecification: {AttributeName: TTL, Enabled: true}
       SSESpecification: {SSEEnabled: true}
       PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
@@ -48,7 +60,7 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: private citizen evidence with short-lived signed viewing URLs
-        must: [block public access, TLS only, expire evidence after seven days]
+        must: [block public access, TLS only, expire evidence after ninety days]
     Properties:
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
@@ -63,8 +75,8 @@ Resources:
         Rules:
           - Id: RemoveOldEvidence
             Status: Enabled
-            ExpirationInDays: 7
-            NoncurrentVersionExpiration: {NoncurrentDays: 7}
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration: {NoncurrentDays: 90}
   EvidenceTlsPolicy:
     Type: AWS::S3::BucketPolicy
     Metadata:
@@ -87,10 +99,15 @@ Resources:
     UpdateReplacePolicy: Retain
     Metadata:
       com.aws.cloudformation.Context:
-        why: authenticated review identities; only administrators provision operators
-        must: [disable public registration, backend checks civic-operators group]
+        why: authenticated review identities; citizens self-register; municipal authority requires administrator approval
+        must: [public signup grants no municipal authority, backend checks approved membership and group]
     Properties:
-      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: false}
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AccountRecoverySetting:
+        RecoveryMechanisms: [{Name: verified_email, Priority: 1}]
+      VerificationMessageTemplate: {DefaultEmailOption: CONFIRM_WITH_CODE}
       Policies:
         PasswordPolicy:
           MinimumLength: 12
@@ -118,9 +135,12 @@ Resources:
     Properties:
       UserPoolId: !Ref OperatorPool
       GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH, ALLOW_ADMIN_USER_PASSWORD_AUTH]
+      ReadAttributes: [email, email_verified, name]
+      WriteAttributes: [email, name]
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthFlows: [code]
-      AllowedOAuthScopes: [openid]
+      AllowedOAuthScopes: [openid, email, profile, aws.cognito.signin.user.admin]
       SupportedIdentityProviders: [COGNITO]
       CallbackURLs: [!Sub '${FrontendOrigin}/']
       LogoutURLs: [!Sub '${FrontendOrigin}/']
@@ -184,6 +204,27 @@ Resources:
         - S3CrudPolicy: {BucketName: !Ref JalMargEvidenceBucket}
         - StepFunctionsExecutionPolicy: {StateMachineName: !GetAtt IncidentWorkflow.Name}
       Events:
+        MunicipalIncidents:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /municipal/incidents, Method: get, Auth: {Authorizer: OperatorAuthorizer}}
+        MunicipalWorkers:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /municipal/workers, Method: get, Auth: {Authorizer: OperatorAuthorizer}}
+        MunicipalWork:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: '/municipal/incidents/{id}/work', Method: post, Auth: {Authorizer: OperatorAuthorizer}}
+        MyReports:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /my-reports, Method: get, Auth: {Authorizer: OperatorAuthorizer}}
+        Profile:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /me, Method: get, Auth: {Authorizer: OperatorAuthorizer}}
+        UpdateProfile:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /me, Method: post, Auth: {Authorizer: OperatorAuthorizer}}
+        ApplyMunicipal:
+          Type: Api
+          Properties: {RestApiId: !Ref JalMargApi, Path: /municipal/apply, Method: post, Auth: {Authorizer: OperatorAuthorizer}}
         Health:
           Type: Api
           Properties: {RestApiId: !Ref JalMargApi, Path: /health, Method: get}
@@ -192,13 +233,13 @@ Resources:
           Properties: {RestApiId: !Ref JalMargApi, Path: /incidents, Method: get}
         Report:
           Type: Api
-          Properties: {RestApiId: !Ref JalMargApi, Path: /incidents, Method: post}
+          Properties: {RestApiId: !Ref JalMargApi, Path: /incidents, Method: post, Auth: {Authorizer: OperatorAuthorizer}}
         Upload:
           Type: Api
-          Properties: {RestApiId: !Ref JalMargApi, Path: /evidence, Method: post}
+          Properties: {RestApiId: !Ref JalMargApi, Path: /evidence, Method: post, Auth: {Authorizer: OperatorAuthorizer}}
         Observation:
           Type: Api
-          Properties: {RestApiId: !Ref JalMargApi, Path: '/incidents/{id}/observations', Method: post}
+          Properties: {RestApiId: !Ref JalMargApi, Path: '/incidents/{id}/observations', Method: post, Auth: {Authorizer: OperatorAuthorizer}}
         Review:
           Type: Api
           Properties:

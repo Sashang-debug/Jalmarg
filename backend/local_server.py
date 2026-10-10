@@ -4,7 +4,6 @@ import argparse
 import json
 import logging
 import os
-import secrets
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -70,10 +69,8 @@ def main():
     parser.add_argument("--data-dir", default=str(Path(__file__).parent.parent / "data" / "local"))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    if not os.environ.get("LOCAL_OPERATOR_TOKEN"):
-        os.environ["LOCAL_OPERATOR_TOKEN"] = secrets.token_urlsafe(24)
     Server.repository = LocalRepository(args.data_dir)
-    print(f"Local operator token (development only): {os.environ['LOCAL_OPERATOR_TOKEN']}", flush=True)
+    print("Writes require a verified Cognito account; configure USER_POOL_ID and OPERATOR_CLIENT_ID.", flush=True)
     print(f"JalMarg API: http://127.0.0.1:{args.port}/api/health", flush=True)
     ThreadingHTTPServer(("127.0.0.1", args.port), Server).serve_forever()
 

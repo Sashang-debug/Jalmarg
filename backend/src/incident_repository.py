@@ -5,6 +5,8 @@ import json
 import os
 import sqlite3
 import threading
+import time
+from incident_service import iso
 from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -29,6 +31,10 @@ class LocalRepository:
         with self.connect() as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS incidents (id TEXT PRIMARY KEY, city TEXT, version INTEGER, document TEXT)")
             conn.execute("CREATE INDEX IF NOT EXISTS city_lookup ON incidents(city)")
+            conn.execute("CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, version INTEGER, document TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS evidence_owners (id TEXT PRIMARY KEY, owner TEXT, createdAt TEXT)")
+            if 'createdAt' not in [row[1] for row in conn.execute('PRAGMA table_info(evidence_owners)')]:
+                conn.execute('ALTER TABLE evidence_owners ADD COLUMN createdAt TEXT')
 
     @contextmanager
     def connect(self):
@@ -61,6 +67,45 @@ class LocalRepository:
                 if result.rowcount != 1:
                     raise ApiError(409, "Report changed in another session. Refresh and try again.")
 
+    def get_profile(self, user_id):
+        with self.connect() as conn:
+            row = conn.execute("SELECT document FROM profiles WHERE id=?", (user_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def put_profile(self, profile, previous_version=None):
+        with self.lock, self.connect() as conn:
+            if previous_version is None:
+                try:
+                    conn.execute("INSERT INTO profiles VALUES (?,?,?)", (profile['id'], profile['version'], json.dumps(profile)))
+                except sqlite3.IntegrityError:
+                    raise ApiError(409, 'Profile changed. Refresh and try again.') from None
+            elif conn.execute("UPDATE profiles SET version=?,document=? WHERE id=? AND version=?",
+                              (profile['version'], json.dumps(profile), profile['id'], previous_version)).rowcount != 1:
+                raise ApiError(409, 'Profile changed. Refresh and try again.')
+
+    def list_profiles(self, city):
+        with self.connect() as conn:
+            items = [json.loads(row[0]) for row in conn.execute("SELECT document FROM profiles")]
+        return [p for p in items if (p.get('membership') or {}).get('city') == city]
+
+    def list_owned(self, owner):
+        with self.connect() as conn:
+            return [item for row in conn.execute("SELECT document FROM incidents")
+                    if (item := json.loads(row[0])).get('ownerSub') == owner]
+
+    def own_evidence(self, key, owner):
+        with self.connect() as conn:
+            conn.execute("INSERT INTO evidence_owners VALUES (?,?,?)", (key, owner, iso(time.time())))
+
+    def evidence_upload_time(self, key):
+        with self.connect() as conn:
+            row = conn.execute('SELECT createdAt FROM evidence_owners WHERE id=?', (key,)).fetchone()
+        return row[0] if row else None
+
+    def evidence_owned(self, key, owner):
+        with self.connect() as conn:
+            return conn.execute("SELECT 1 FROM evidence_owners WHERE id=? AND owner=?", (key, owner)).fetchone() is not None
+
     def save_evidence(self, key, data, content_type):
         target = self.directory / key
         target.parent.mkdir(exist_ok=True)
@@ -82,14 +127,17 @@ class AwsRepository:
         self.config = Config(connect_timeout=5, read_timeout=10, retries={"total_max_attempts": 3, "mode": "standard"})
         session = boto3.Session(region_name=os.environ.get("AWS_REGION", "ap-south-1"))
         self.table = session.resource("dynamodb", config=self.config).Table(os.environ["TABLE_NAME"])
-        self.s3 = session.client("s3", config=self.config)
+        # Sign the regional host itself: a redirect from the global S3 endpoint
+        # changes the signed Host header and breaks private photo URLs.
+        self.s3 = session.client("s3", endpoint_url=f"https://s3.{session.region_name}.amazonaws.com",
+                                 config=self.config.merge(Config(signature_version='s3v4', s3={'addressing_style': 'virtual'})))
         self.bucket = os.environ["BUCKET_NAME"]
 
     def list(self, city):
         from boto3.dynamodb.conditions import Key
         pages = self.table.meta.client.get_paginator("query").paginate(
             TableName=self.table.name, KeyConditionExpression=Key("PK").eq(f"CITY#{city}"), ConsistentRead=True)
-        return [item for page in pages for item in page.get("Items", [])]
+        return [item for page in pages for item in page.get("Items", []) if item.get("SK", "").startswith("INCIDENT#")]
 
     def get(self, city, incident_id):
         item = self.table.get_item(Key={"PK": f"CITY#{city}", "SK": f"INCIDENT#{incident_id}"}, ConsistentRead=True).get("Item")
@@ -106,6 +154,43 @@ class AwsRepository:
             self.table.put_item(Item=document, ConditionExpression=condition)
         except self.table.meta.client.exceptions.ConditionalCheckFailedException:
             raise ApiError(409, "Report changed in another session. Refresh and try again.") from None
+
+    def get_profile(self, user_id):
+        return self.table.get_item(Key={'PK': f'USER#{user_id}', 'SK': 'PROFILE'}, ConsistentRead=True).get('Item')
+
+    def put_profile(self, profile, previous_version=None):
+        from boto3.dynamodb.conditions import Attr
+        document = {**profile, 'PK': f"USER#{profile['id']}", 'SK': 'PROFILE'}
+        if profile.get('membership'):
+            document['directoryCity'] = profile['membership']['city']
+        condition = Attr('PK').not_exists() if previous_version is None else Attr('version').eq(previous_version)
+        try:
+            self.table.put_item(Item=json.loads(json.dumps(document, default=json_default), parse_float=Decimal), ConditionExpression=condition)
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            raise ApiError(409, 'Profile changed. Refresh and try again.') from None
+
+    def list_profiles(self, city):
+        from boto3.dynamodb.conditions import Key
+        pages = self.table.meta.client.get_paginator('query').paginate(TableName=self.table.name,
+            IndexName='MunicipalDirectory', KeyConditionExpression=Key('directoryCity').eq(city))
+        return [item for page in pages for item in page.get('Items', [])]
+
+    def list_owned(self, owner):
+        from boto3.dynamodb.conditions import Key
+        pages = self.table.meta.client.get_paginator('query').paginate(TableName=self.table.name,
+            IndexName='CitizenReports', KeyConditionExpression=Key('ownerSub').eq(owner))
+        return [item for page in pages for item in page.get('Items', [])]
+
+    def own_evidence(self, key, owner):
+        self.table.put_item(Item={'PK': f'EVIDENCE#{key}', 'SK': 'OWNER', 'ownerSub': owner, 'uploadedAt': iso(time.time()), 'TTL': int(time.time()+90*86400)})
+
+    def evidence_upload_time(self, key):
+        item = self.table.get_item(Key={'PK': f'EVIDENCE#{key}', 'SK': 'OWNER'}, ConsistentRead=True).get('Item')
+        return item.get('uploadedAt') if item else None
+
+    def evidence_owned(self, key, owner):
+        item = self.table.get_item(Key={'PK': f'EVIDENCE#{key}', 'SK': 'OWNER'}, ConsistentRead=True).get('Item')
+        return bool(item and item['ownerSub'] == owner)
 
     def save_evidence(self, key, data, content_type):
         self.s3.upload_fileobj(io.BytesIO(data), self.bucket, key,

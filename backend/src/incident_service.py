@@ -123,8 +123,11 @@ def new_incident(body, now=None):
 
 
 def public_incident(item, photo_url=""):
-    return {**{k: v for k, v in item.items() if k not in {"PK", "SK", "TTL", "reporterHash", "observations"}},
-            "photoUrl": photo_url, "reportCount": 1,
+    ticket = {k:v for k,v in (item.get('workTicket') or {}).items() if k != 'assigneeSub'} or None
+    resolution = {k:v for k,v in (item.get('resolution') or {}).items() if k not in {'submittedBy','reviewedBy'}} or None
+    return {**{k: v for k, v in item.items() if k not in {"PK", "SK", "TTL", "reporterHash", "ownerSub", "observations"}},
+            "resolutionHistory": [{k:v for k,v in r.items() if k not in {"submittedBy","reviewedBy"}} for r in item.get("resolutionHistory",[])],
+            "photoUrl": photo_url, "reportCount": 1, "workTicket": ticket, "resolution": resolution,
             "stillFloodedCount": sum(o["kind"] == "STILL_FLOODED" for o in item["observations"]),
             "recededCount": sum(o["kind"] == "RECEDED" for o in item["observations"])}
 

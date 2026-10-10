@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend' / 'src'))
 from api import handle, operator_authorized, process_report
+from account_service import verified_claims
 from incident_repository import LocalRepository
 from incident_service import ApiError, new_incident
 
@@ -20,12 +21,18 @@ class IncidentApiTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.repo = LocalRepository(self.directory.name)
+        env = patch.dict(os.environ, {'OPERATOR_CLIENT_ID': 'test-client'})
+        env.start(); self.addCleanup(env.stop)
+        auth = patch('account_service.verified_claims', side_effect=lambda event, mode: verified_claims(event, 'aws'))
+        auth.start(); self.addCleanup(auth.stop)
         self.body = {'city': 'BLR', 'roadName': 'Silk Board', 'lat': 12.9176, 'lng': 77.6238,
                      'waterLevel': 'KNEE', 'reporterId': 'browser-one', 'notes': 'Underpass water'}
 
     def request(self, method, path, body=None, token='', repository=None):
         event = {'httpMethod': method, 'path': path, 'body': json.dumps(body or {}),
-                 'queryStringParameters': {'city': 'BLR'}, 'headers': {'Authorization': f'Bearer {token}'}}
+                 'queryStringParameters': {'city': 'BLR'}, 'headers': {'Authorization': f'Bearer {token}'},
+                 'requestContext': {'authorizer': {'claims': {'sub': (body or {}).get('reporterId', 'browser-one'),
+                    'aud': 'test-client', 'token_use': 'id', 'email_verified': 'true', 'exp': int(time.time()) + 3600}}}}
         response = handle(event, repository or self.repo)
         return response['statusCode'], json.loads(response['body'])
 
@@ -95,7 +102,7 @@ class IncidentApiTests(unittest.TestCase):
     def test_validation_rejects_bad_inputs(self):
         for fields in [{'lat': -91}, {'lng': 181}, {'lat': float('nan')}, {'lat': True},
                        {'waterLevel': 'UNKNOWN'}, {'roadName': ''}, {'city': 'UNKNOWN_CITY'},
-                       {'notes': 'a' * 601}, {'reporterId': ''}, {'evidenceKey': '../secret'}]:
+                       {'notes': 'a' * 601}, {'evidenceKey': '../secret'}]:
             with self.subTest(fields=fields):
                 status, _ = self.request('POST', '/incidents', {**self.body, **fields})
                 self.assertEqual(status, 400)
@@ -106,18 +113,14 @@ class IncidentApiTests(unittest.TestCase):
         with patch.dict(os.environ, {'LOCAL_OPERATOR_TOKEN': 'correct'}):
             for token in ['', 'incorrect']:
                 status, _ = self.request('POST', f"/incidents/{item['id']}/review", {'city': 'BLR', 'action': 'CONFIRM'}, token)
-                self.assertEqual(status, 403)
+                self.assertEqual(status, 410)
         self.assertEqual(self.repo.get('BLR', item['id'])['status'], 'NEEDS_REVIEW')
 
-    def test_review_ticket_clear_and_audit_trail(self):
+    def test_legacy_review_cannot_bypass_municipal_workflow(self):
         item = self.create()
         with patch.dict(os.environ, {'LOCAL_OPERATOR_TOKEN': 'correct'}):
-            for action, expected in [('CONFIRM', 'CONFIRMED'), ('CREATE_TICKET', 'CONFIRMED'), ('CLEAR', 'CLEARED')]:
-                status, result = self.request('POST', f"/incidents/{item['id']}/review", {'city': 'BLR', 'action': action, 'note': 'Reviewed evidence'}, 'correct')
-                self.assertEqual(status, 200)
-                self.assertEqual(result['incident']['status'], expected)
-            self.assertEqual(result['incident']['workTicket']['status'], 'AWAITING_ASSIGNMENT')
-            self.assertEqual(len(result['incident']['timeline']), 5)
+            self.assertEqual(self.request('POST', f"/incidents/{item['id']}/review", {'city': 'BLR', 'action': 'CLEAR'}, 'correct')[0], 410)
+        self.assertEqual(self.repo.get('BLR', item['id'])['status'], 'NEEDS_REVIEW')
 
     def test_receded_observation_never_auto_clears(self):
         item = self.create()
@@ -128,7 +131,8 @@ class IncidentApiTests(unittest.TestCase):
         self.assertEqual(result['incident']['recededCount'], 1)
         status, _ = self.request('POST', f"/incidents/{item['id']}/observations",
                                 {'city': 'BLR', 'action': 'STILL_FLOODED', 'reporterId': 'browser-two'})
-        self.assertEqual(status, 409)
+        self.assertEqual(status, 200)
+        self.assertEqual(result['incident']['status'], 'NEEDS_REVIEW')
 
     def test_original_reporter_cannot_self_corroborate(self):
         item = self.create()
@@ -140,7 +144,7 @@ class IncidentApiTests(unittest.TestCase):
         self.repo.put(item)
         with patch.dict(os.environ, {'LOCAL_OPERATOR_TOKEN': 'correct'}):
             status, _ = self.request('POST', f"/incidents/{item['id']}/review", {'city': 'BLR', 'action': 'CONFIRM'}, 'correct')
-        self.assertEqual(status, 409)
+        self.assertEqual(status, 410)
 
     def test_optimistic_update_prevents_lost_observations(self):
         item = self.create()
@@ -157,7 +161,7 @@ class IncidentApiTests(unittest.TestCase):
         self.assertEqual(len(self.repo.get('BLR', item['id'])['timeline']), 2)
         with patch.dict(os.environ, {'LOCAL_OPERATOR_TOKEN': 'correct'}):
             self.request('POST', f"/incidents/{item['id']}/review", {'city': 'BLR', 'action': 'CONFIRM'}, 'correct')
-        self.assertEqual(process_report(self.repo, 'BLR', item['id'])['status'], 'CONFIRMED')
+        self.assertEqual(process_report(self.repo, 'BLR', item['id'])['status'], 'NEEDS_REVIEW')
 
     def test_evidence_upload_reference_and_private_storage(self):
         data = b'\x89PNG\r\n\x1a\n' + b'example'

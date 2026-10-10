@@ -7,12 +7,12 @@ import PlaceSearch from './PlaceSearch'
 import PhotoDepthTool from './PhotoDepthTool'
 import { photoDepth } from '../utils/vehicleAssessment'
 import InteractiveMap from './InteractiveMap'
-import { apiRequest, browserReporterId } from '../utils/incidentsApi'
+import { apiRequest } from '../utils/incidentsApi'
 
 const LEVELS = [ ['ANKLE', 'Ankle-level', 'Shallow standing water'], ['WHEEL', 'Wheel-level', 'Water around vehicle wheels'],
   ['KNEE', 'Knee-level', 'Deep standing water'], ['DEEP', 'Deep water', 'Vehicles partly submerged'] ]
 
-async function preparePhoto(file) {
+export async function preparePhoto(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose a JPEG, PNG, or WebP photo.')
   if (file.size > 12 * 1024 * 1024) throw new Error('Choose a photo smaller than 12 MB.')
   const bitmap = await createImageBitmap(file)
@@ -26,7 +26,7 @@ async function preparePhoto(file) {
   return { data: dataUrl.split(',')[1], contentType: 'image/jpeg', preview: dataUrl }
 }
 
-export default function ReportComposer({ city, userLocation, onClose, onSaved, demo, apiKey, theme, onLocated }) {
+export default function ReportComposer({ session, city, userLocation, onClose, onSaved, demo, apiKey, theme, onLocated }) {
   const [step, setStep] = useState(1)
   const [point, setPoint] = useState(userLocation || null)
   const [roadName, setRoadName] = useState(userLocation?.name || '')
@@ -95,9 +95,9 @@ export default function ReportComposer({ city, userLocation, onClose, onSaved, d
     try {
       if (demo) throw new Error('Switch to Live reports to submit a persistent observation.')
       let key = evidenceKey
-      if (photo && !key) { key = (await apiRequest('/evidence', { body: { data: photo.data, contentType: photo.contentType } })).evidenceKey; setEvidenceKey(key) }
-      const result = await apiRequest('/incidents', { body: { city: cityForPoint(point), roadName, lat: Number(point.lat), lng: Number(point.lng),
-        waterLevel: level, notes, evidenceKey: key, photoReference, reporterId: browserReporterId() } })
+      if (photo && !key) { key = (await apiRequest('/evidence', { token: session?.token, body: { data: photo.data, contentType: photo.contentType } })).evidenceKey; setEvidenceKey(key) }
+      const result = await apiRequest('/incidents', { token: session?.token, body: { city: cityForPoint(point), roadName, lat: Number(point.lat), lng: Number(point.lng),
+        waterLevel: level, notes, evidenceKey: key, photoReference } })
       setSaved(result.incident); onSaved(result.incident)
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }

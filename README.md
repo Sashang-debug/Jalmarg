@@ -2,18 +2,24 @@
 
 A waterlogging reporting and route-advisory prototype for two-wheeler commuters.
 Built for the **Heat and Water** track. The current flow is: citizen observation →
-shared incident → operator evidence review → route recalculation → clearance.
+shared incident → municipal review and assignment → evidence-backed completion →
+independent resolution review → citizen follow-up.
+
+Live application: [Open JalMarg](https://d2vv0vxqbvoy73.cloudfront.net/).
 
 ## Run locally
 
 In the repository root:
 
 ```sh
-python3 backend/local_server.py
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/src/requirements.txt
+backend/.venv/bin/python backend/local_server.py
 ```
 
-The API binds to `127.0.0.1:3001`, persists reports in `data/local/`, and prints a
-random development operator token. In another terminal:
+The API binds to `127.0.0.1:3001`, persists reports in `data/local/`, and prints
+an account configuration notice. Public browsing works without authentication; new
+reports, photos and observations require verified Cognito sign-in. In another terminal:
 
 ```sh
 cd frontend
@@ -22,7 +28,10 @@ npm run dev -- --host 127.0.0.1
 ```
 
 Open `http://127.0.0.1:5173`. Use `/api` for `VITE_API_BASE_URL`; Vite proxies it to
-the local server. No AWS credentials or LocalStack are needed for this mode.
+the local server. Public browsing needs no AWS credentials or LocalStack. For authenticated local
+writes, configure `USER_POOL_ID`, `OPERATOR_CLIENT_ID`, `AWS_REGION` on the API and
+a Cognito callback/client configuration matching the frontend origin. The API
+validates real JWT signatures; there is no development-role bypass.
 Optional settings are documented in `frontend/.env.example`. Browser-visible
 `VITE_*` variables must never contain AWS credentials. Google Maps keys need
 website restrictions; Leaflet/OpenStreetMap is available without a Google key.
@@ -31,7 +40,13 @@ website restrictions; Leaflet/OpenStreetMap is available without a Google key.
 
 - Persistent shared reports with four-hour active lifetime, evidence photos,
   status history, and follow-up observations. Photo re-encoding removes original EXIF.
-- Separate operator workspace: confirm, clear, and create a ticket awaiting assignment.
+- Citizen landing, Cognito signup/sign-in, verified-email accounts and private My reports.
+- Municipal applications start pending. A trusted administrator verifies corporation,
+  city, ward and employee details; permissions require both approval and Cognito group.
+- City-scoped municipal workspace: queue/map, depth-based priority, duplicates,
+  assignment, work notes and version-controlled audit history.
+- Completion requires a recent account-owned after-photo and another approved worker's
+  review. Citizens can reopen resolved incidents. Work history survives routing expiry.
 - Google traffic-aware routing when Routes API is enabled, with explicit real OSRM
   driving fallback, segment-by-segment report checks, audited alternatives,
   and explicit unavailable/blocked states. Failed requests never invent a route.
@@ -47,16 +62,16 @@ website restrictions; Leaflet/OpenStreetMap is available without a Google key.
 - Optional photo reference depth estimate, server-side recomputation and provenance;
   marker details compare two-wheeler, sedan and SUV avoidance settings.
 - AWS SAM infrastructure for API Gateway/Lambda, DynamoDB, private S3,
-  Step Functions, Cognito operator sign-in, logs, tracing, and a failure alarm.
+  Step Functions, Cognito accounts, logs, tracing, and a failure alarm.
+- Private S3 + CloudFront HTTPS frontend hosting in a separate stack.
 
-The AWS implementation is authored and template-validated, **not deployed or
-runtime-verified**. See [DEPLOYMENT.md](DEPLOYMENT.md) for the remaining steps.
-Local health explicitly identifies SQLite; it does not imply AWS connectivity.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for actual cloud status, account administration
+and verification results. Local health explicitly identifies SQLite.
 
 ## Verify
 
 ```sh
-python3 -m unittest discover -s tests -v
+PYTHONPATH=.aws-sam/build/IncidentApiFunction python3 -m unittest discover -s tests -v
 python3 tests/test_phase2_intelligence.py
 python3 tests/test_phase3_spatial_and_plumbing.py
 cd frontend
@@ -67,30 +82,22 @@ cd ..
 sam validate --lint --template-file backend/template.yaml
 ```
 
-The current run passed 21 Python unittest cases and 19 frontend routing/location/
-dummy-scenario tests. Earlier nine legacy script checks also passed.
-Build and lint pass; unused legacy components still produce lint warnings.
-Desktop and 390 × 844 browser checks covered submission, explicit review,
-refresh persistence, two-tab visibility, operator confirmation/ticket/clearance,
-mobile expansion, and Escape dismissal. See `agent.md` for precise limitations.
+The identity implementation passes 47 Python tests and 32 frontend tests. Build and
+lint pass; legacy components still produce lint warnings. Per-phase outcomes and
+live deployment checks are recorded in `agent.md` and `DEPLOYMENT.md`.
 
 ## A focused judge demo
 
-1. Start in **Live reports** and show the storage/connection indicator.
-2. Submit a recent observation at a known route point. Explain its unreviewed status.
-3. Open another browser session to show the same persisted report and evidence.
-4. Sign into Operator, review evidence, confirm, and create a review ticket.
-5. Show the route rationale and actual returned alternative, or honestly show
-   that every returned route is affected. Compare vehicle avoidance profiles.
-6. Clear the incident after review and show it disappear from active routing.
-7. Use **Test routes** for session-only dummy floods on real street geometry; label
-   them as test observations. See the repeatable scenarios below.
-8. After AWS deployment, show the real Step Functions execution and CloudWatch
-   logs for that incident ID. Avoid presenting prototype metrics as live AWS data.
-
-Measure impact with a small pilot: report-to-visibility latency, reviewed report
-precision, routing false positives on recorded road cases, successful task
-completion, and observed detour time. Do not substitute invented impact numbers.
+1. Start on the landing page; explore the public map without signing in.
+2. Sign in as a citizen, submit an observation and show it in My reports.
+3. Show an access request remaining pending; explain administrator verification.
+4. Sign in as an approved worker, review the city queue, assign and start work.
+5. Submit an after-photo and work note. Show that this alone does not clear the road.
+6. A second approved worker reviews completion; citizen history shows the result.
+7. Citizen feedback can reopen an issue. Old observations expire independently of work.
+8. Use **Test routes** for session-only dummy floods on real fetched roads; explain
+   provider ETA limitations, vehicle profiles and route rationale honestly.
+9. Show the actual Step Functions execution and CloudWatch request logs.
 
 ## Scope and honesty
 

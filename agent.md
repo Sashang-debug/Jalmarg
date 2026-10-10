@@ -418,3 +418,104 @@ authoritative status of the improvement work.
   whitespace checks pass; no browser console errors on the final marker flow.
   Additional screenshots: docs/jalmarg-city-desktop.jpg and
   docs/jalmarg-vehicle-assessment.jpg. API restarted with final validation.
+
+## 11. Citizen and municipal identities (implementation underway)
+### Phase 1: plan, audit, validation
+- Audited current API, SQLite/DynamoDB repository, operator-only Cognito stack,
+  PKCE client, public report writes and four-hour routing freshness.
+- Recorded IDENTITY_IMPLEMENTATION_PLAN.md. Reuse one user pool, keep Cognito-owned
+  signup/verification/recovery, server-authorized profiles and municipal membership.
+- Existing records remain unclaimed; work history must outlive routing freshness.
+- AWS identity verified; no JalMarg deployed stack exists. Unrelated existing stack
+  will not be changed. Host has Python 3.14; AWS official runtime reference confirms
+  python3.14 supported, allowing a native build instead of unavailable Docker/3.12.
+### Phase 2: landing build and test
+- Added responsive landing with actual product screenshot, public map entry,
+  citizen and municipal actions, connected-response explanation and limitations.
+- Retained Material Web buttons, existing logo/icons and blue semantic tokens.
+- Production build + 28 frontend tests passed; desktop screenshot and public-map
+  navigation verified in browser. Identity actions connected in the next phase.
+### Phase 3: accounts build and test
+- Generalized authorization-code+PKCE flow with state/nonce/audience/token-kind/
+  verified-email/expiry checks. Cognito owns signup, confirmation and recovery.
+  Tokens kept in memory; reload uses sign-in again (Cognito session can resume).
+- Added authenticated profile APIs; caller identity comes from verified Cognito
+  claims. Local backend validates real JWTs when configured, never role headers.
+- Added account/sign-in screens and expiration/logout behavior.
+- Build + 30 frontend tests passed. Seven identity/membership API tests passed,
+  including unverified/expired/wrong-client claims and cross-user profile attempts.
+  Live Cognito signup remains to be verified after Phase 8 deployment.
+### Phase 4: municipal onboarding build and test
+- Added authenticated access request with corporation/city/ward/employee identifier;
+  request is always PENDING. Browser fields cannot grant membership or choose roles.
+- Municipal authority requires approved stored membership AND Cognito group.
+  Suspension in storage immediately denies even a previously issued group token.
+- Added trusted AWS administrator CLI for approval/rejection/suspension. It checks
+  verified email and state transitions; no public privilege-promotion endpoint.
+- Pending/approved request screens built. Seven API tests cover forged approval,
+  group without approval, approved profile without group and suspension.
+### Phase 5: citizen reporting build and test
+- New reports and evidence uploads require verified sign-in. Ownership is assigned
+  by the backend from authenticated subject; reporterId/owner fields are ignored.
+- Added private My reports across cities with persisted history/evidence. Old
+  anonymous reports stay unclaimed. New work records have no DynamoDB TTL;
+  routing still independently filters expiresAt.
+- Added evidence ownership validation to prevent another account reusing uploads.
+- Retired legacy /review mutations (410) so local operator tokens cannot bypass
+  the municipal workflow. Updated old tests for the authenticated contract.
+- 34 Python tests pass; frontend build passes. Covered anonymous write denial,
+  owner spoofing, cross-user history and evidence reuse; public browsing retained.
+### Phase 6: municipal workspace build and test
+- Added jurisdiction-scoped incident queue/map, reported-depth priority, search,
+  open/mine/review/history filters and approved-worker assignment.
+- Implemented review, assignment, start, reject and duplicate linking with notes,
+  actor audit trail, expected-version checks and city/assignee enforcement.
+- Invalid/duplicate work classification does not silently clear road conditions.
+- Work stays visible after observation expiry. Public responses hide owner and
+  assignment account IDs; municipal response includes assignment for authorized use.
+- 41 Python tests + production build pass, including city boundaries, unapproved
+  assignees, starting another worker's task, stale writes and duplicate self-links.
+
+### Phase 7: resolution build and test
+- Completion requires an account-owned after-photo uploaded after task start and a
+  work note. Another approved worker in the city must review before resolution.
+- Evidence older than four hours cannot clear current road conditions. Citizen
+  feedback can reopen resolved work; recession alone never grants clearance.
+- Preserved previous completion evidence when work is completed again, with private
+  account IDs excluded from public views. Evidence retention is ninety days.
+- 43 Python tests, 32 frontend tests and production build pass; includes stale
+  evidence, stale review, self-review denial and citizen reopening.
+- Phase 8: build, isolated AWS deployment and live checks now underway.
+
+### Phase 8: deployed and verified (11 October 2026)
+- Deployed isolated jalmarg-api + jalmarg-web in ap-south-1. Unrelated existing
+  application stack untouched. Frontend: https://d2vv0vxqbvoy73.cloudfront.net/.
+- Hosting uses private encrypted/versioned S3, CloudFront OAC, HTTPS and managed
+  security headers. Cognito callback and API CORS match the deployed origin.
+- Pinned boto3 1.43.111 / PyJWT crypto 2.15.1; built native Python 3.14 Lambda
+  artifacts, verified Linux libraries, SAM lint and reviewed CloudFormation changes.
+- Fixed live-only API Gateway formatted-expiry handling without weakening local
+  JWT verification; regional S3 SigV4 URLs now load without redirect/signature failure.
+- Kept mutation errors visible across polling. Default citizen display name no
+  longer exposes email; authenticated account display-name editing added.
+- Live synthetic tests passed for Cognito/profile/application/approval, anonymous
+  denial, city scope, ownership, private photos, DynamoDB indexes, Step Functions,
+  durable work, assignee-only actions, fresh completion evidence, independent review
+  and citizen reopening. Signed S3 returned 200; unsigned access returned 403.
+- Browser verified citizen submission and municipal review → assign → start →
+  upload after-photo → submit → approve as another worker → resolved. Prior
+  completion history remains visible. Corrected misleading resolved-task copy.
+- Desktop and 390px mobile landing/workspace visually checked; saved proof under
+  docs/jalmarg-*.jpg. Citizen and completion photos load in evidence dialog.
+- Final checks: 47 Python tests, 32 frontend tests, production build, lint (warnings
+  only), SAM lint and git diff --check passed. Backend UPDATE_COMPLETE; hosting
+  CREATE_COMPLETE; API health and frontend 200. Details: docs/identity-verification.md.
+- Removed all synthetic users/reports/profiles/evidence metadata and S3 versions;
+  verified zero remaining fixture resources. Deleted temporary credentials and
+  signed out test browser session. Normal cloud audit logs remain retained.
+- Real inbox signup verification/recovery delivery remains untested (fixtures
+  intentionally suppressed email). CloudFormation Guard unavailable. Existing Google
+  Routes API remains disabled; UI truthfully uses OSRM driving fallback without live
+  traffic/two-wheeler ETA. Municipal permission scope is city, ward is descriptive.
+- README/DEPLOYMENT include live configuration, trusted membership administration,
+  local dependency setup and verification limits. No GitHub publish in this phase.
