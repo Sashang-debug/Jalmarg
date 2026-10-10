@@ -11,7 +11,8 @@ import {
   Droplets, 
   Info,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  Activity
 } from 'lucide-react'
 
 export default function GoogleMapsMenuDrawer({
@@ -29,6 +30,7 @@ export default function GoogleMapsMenuDrawer({
   setAudioRadarActive,
   onOpenReportModal,
   onOpenCivicDashboard,
+  onOpenObservability,
   onOpenKeyModal,
   activePumpTicketsCount,
   googleApiKey
@@ -186,58 +188,91 @@ export default function GoogleMapsMenuDrawer({
             </div>
 
             {/* Traffic Toggle */}
-            <div
-              onClick={() => setShowTraffic(!showTraffic)}
+            <label
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 0',
-                cursor: 'pointer'
+                padding: '10px 8px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background 0.15s'
               }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#F8F9FA'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <TrafficCone size={18} color="#EA8600" />
-                <span style={{ fontSize: '14px', color: '#202124' }}>Google Live Traffic</span>
+                <span style={{ fontSize: '14px', color: '#202124', fontWeight: showTraffic ? 600 : 400 }}>
+                  Google Live Traffic
+                </span>
               </div>
-              <input type="checkbox" checked={showTraffic} onChange={() => {}} style={{ cursor: 'pointer' }} />
-            </div>
+              <input
+                type="checkbox"
+                checked={Boolean(showTraffic)}
+                onChange={(e) => setShowTraffic(e.target.checked)}
+                style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#1A73E8' }}
+              />
+            </label>
 
             {/* Potholes Toggle */}
-            <div
-              onClick={() => setShowPotholes(!showPotholes)}
+            <label
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 0',
-                cursor: 'pointer'
+                padding: '10px 8px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background 0.15s'
               }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#F8F9FA'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Layers size={18} color="#673AB7" />
-                <span style={{ fontSize: '14px', color: '#202124' }}>Post-Flood Potholes</span>
+                <span style={{ fontSize: '14px', color: '#202124', fontWeight: showPotholes ? 600 : 400 }}>
+                  Post-Flood Potholes
+                </span>
               </div>
-              <input type="checkbox" checked={showPotholes} onChange={() => {}} style={{ cursor: 'pointer' }} />
-            </div>
+              <input
+                type="checkbox"
+                checked={Boolean(showPotholes)}
+                onChange={(e) => setShowPotholes(e.target.checked)}
+                style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#1A73E8' }}
+              />
+            </label>
 
             {/* Audio Radar Toggle */}
-            <div
-              onClick={() => setAudioRadarActive(!audioRadarActive)}
+            <label
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 0',
-                cursor: 'pointer'
+                padding: '10px 8px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background 0.15s'
               }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#F8F9FA'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Volume2 size={18} color="#137333" />
-                <span style={{ fontSize: '14px', color: '#202124' }}>Hands-Free Audio Radar</span>
+                <span style={{ fontSize: '14px', color: '#202124', fontWeight: audioRadarActive ? 600 : 400 }}>
+                  Hands-Free Audio Radar
+                </span>
               </div>
-              <input type="checkbox" checked={audioRadarActive} onChange={() => {}} style={{ cursor: 'pointer' }} />
-            </div>
+              <input
+                type="checkbox"
+                checked={Boolean(audioRadarActive)}
+                onChange={(e) => setAudioRadarActive(e.target.checked)}
+                style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#1A73E8' }}
+              />
+            </label>
           </div>
 
           {/* Item 4: Actions & Tools */}
@@ -277,6 +312,24 @@ export default function GoogleMapsMenuDrawer({
               <Building2 size={18} />
               <span style={{ fontSize: '14px', fontWeight: 500 }}>
                 Municipal Pump Queue ({activePumpTicketsCount})
+              </span>
+            </div>
+
+            {/* AWS Observability & X-Ray Cockpit */}
+            <div
+              onClick={() => { onClose(); if (onOpenObservability) onOpenObservability(); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '8px 0',
+                cursor: 'pointer',
+                color: '#FF9900'
+              }}
+            >
+              <Activity size={18} />
+              <span style={{ fontSize: '14px', fontWeight: 600 }}>
+                AWS CloudWatch & X-Ray Cockpit
               </span>
             </div>
 

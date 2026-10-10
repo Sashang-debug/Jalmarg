@@ -9,6 +9,7 @@ export default function InteractiveMap({
   incidents,
   potholes,
   showPotholes,
+  showTraffic = false,
   vehicle,
   activeRoute,
   userLocation,
@@ -28,6 +29,7 @@ export default function InteractiveMap({
         incidents={incidents}
         potholes={potholes}
         showPotholes={showPotholes}
+        showTraffic={showTraffic}
         vehicle={vehicle}
         activeRoute={activeRoute}
         userLocation={userLocation}
@@ -42,6 +44,7 @@ export default function InteractiveMap({
   const mapContainerRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const tileLayerRef = useRef(null)
+  const trafficLayerRef = useRef(null)
   const layerGroupRef = useRef(null)
   const routeLayerRef = useRef(null)
   const userLocationLayerRef = useRef(null)
@@ -218,6 +221,25 @@ export default function InteractiveMap({
 
     tileLayerRef.current = newTileLayer
   }, [mapStyle])
+
+  // 5b. Live Traffic Layer Toggle in Leaflet
+  useEffect(() => {
+    if (!mapInstanceRef.current) return
+
+    if (trafficLayerRef.current) {
+      mapInstanceRef.current.removeLayer(trafficLayerRef.current)
+      trafficLayerRef.current = null
+    }
+
+    if (showTraffic) {
+      const trafficLayer = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m,traffic&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: '0123',
+        opacity: 0.85
+      }).addTo(mapInstanceRef.current)
+      trafficLayerRef.current = trafficLayer
+    }
+  }, [showTraffic])
 
   // 6. Render High-Visibility Incident & Pothole Pins
   useEffect(() => {
@@ -445,14 +467,19 @@ export default function InteractiveMap({
       }
 
       // 3. Avoided Flooded Corridor (High-contrast red barrier line with black casing)
-      L.polyline(activeRoute.directPath, {
+      // Only drawn along the divergent hazard segment so shared roads (e.g. Connaught Place circle) remain cleanly illuminated
+      const hazardPath = (activeRoute.avoidedHazardPath && activeRoute.avoidedHazardPath.length > 0)
+        ? activeRoute.avoidedHazardPath
+        : activeRoute.directPath
+
+      L.polyline(hazardPath, {
         color: '#000000',
         weight: 12,
         opacity: 0.95,
         lineCap: 'round'
       }).addTo(routeLayer)
 
-      L.polyline(activeRoute.directPath, {
+      L.polyline(hazardPath, {
         color: '#FF1744',
         weight: 6,
         opacity: 1.0,
@@ -460,9 +487,9 @@ export default function InteractiveMap({
         className: 'route-hazard-red'
       }).bindTooltip(`<b>AVOIDED CORRIDOR:</b> ${activeRoute.hazardName} (${activeRoute.hazardDepth}cm flood)`).addTo(routeLayer)
 
-      // Direct Hazard Warning Badge
-      const directMidIdx = Math.floor(activeRoute.directPath.length / 2)
-      const directMid = activeRoute.directPath[directMidIdx]
+      // Direct Hazard Warning Badge (Positioned at midpoint of the actual avoided corridor)
+      const directMidIdx = Math.floor(hazardPath.length / 2)
+      const directMid = hazardPath[directMidIdx]
       if (directMid) {
         const hazardBadge = L.divIcon({
           html: `

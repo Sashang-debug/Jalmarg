@@ -12,6 +12,7 @@ export default function GoogleMapEngine({
   incidents = [],
   potholes = [],
   showPotholes = true,
+  showTraffic = false,
   vehicle,
   activeRoute,
   userLocation,
@@ -30,7 +31,6 @@ export default function GoogleMapEngine({
 
   const [isLoaded, setIsLoaded] = useState(false)
   const [loadError, setLoadError] = useState(null)
-  const [showTraffic, setShowTraffic] = useState(false)
   const [mapStyleType, setMapStyleType] = useState('DARK') // 'DARK' | 'DEFAULT'
 
   // 1. Initialize Google Maps via modern functional importLibrary API
@@ -132,7 +132,7 @@ export default function GoogleMapEngine({
     } else {
       trafficLayerRef.current.setMap(null)
     }
-  }, [showTraffic])
+  }, [showTraffic, isLoaded])
 
   // 4. Map Style Change (Dark vs Normal)
   useEffect(() => {
@@ -457,14 +457,19 @@ export default function GoogleMapEngine({
     const google = window.google
 
     if (activeRoute.isDetourRequired) {
-      // 1. Direct path shown as flooded hazard (dashed red line)
-      if (activeRoute.directPath && activeRoute.directPath.length > 0) {
-        const hazardCoords = activeRoute.directPath.map((p) => ({ lat: p[0], lng: p[1] }))
+      // 1. Avoided Flooded Corridor (Only drawn where the route splits off into the flood)
+      // Keeps shared departure roads (e.g. Connaught Place circle) and arrival roads cleanly blue
+      const hazardPath = (activeRoute.avoidedHazardPath && activeRoute.avoidedHazardPath.length > 0)
+        ? activeRoute.avoidedHazardPath
+        : activeRoute.directPath
+
+      if (hazardPath && hazardPath.length > 0) {
+        const hazardCoords = hazardPath.map((p) => ({ lat: p[0], lng: p[1] }))
         const hazardLine = new google.maps.Polyline({
           path: hazardCoords,
           geodesic: true,
           strokeColor: '#EF4444',
-          strokeOpacity: 0.6,
+          strokeOpacity: 0.85,
           strokeWeight: 4
         })
         hazardLine.setMap(mapInstanceRef.current)

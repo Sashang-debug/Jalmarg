@@ -1,0 +1,124 @@
+{
+  "widgets": [
+    {
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 2,
+      "properties": {
+        "markdown": "# 🌊 JalMarg (जलमार्ग) — Autonomous Urban Flood Intelligence Operational Cockpit\n*Real-time centimetre water-depth telemetry, distributed vehicle avoidance routing, and municipal pump dispatch SLA tracking across Indian Metros (BLR, DEL, BOM).*"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 2,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Water Depth (cm) by City & Severity",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "ap-south-1",
+        "metrics": [
+          [ "JalMarg/MonsoonIntelligence", "WaterDepthCm", "City", "DEL", "Severity", "CRITICAL", { "color": "#d62728", "label": "Delhi (Minto Bridge - 68cm)" } ],
+          [ "JalMarg/MonsoonIntelligence", "WaterDepthCm", "City", "BLR", "Severity", "CRITICAL", { "color": "#ff7f0e", "label": "Bengaluru (Silk Board - 48cm)" } ],
+          [ "JalMarg/MonsoonIntelligence", "WaterDepthCm", "City", "BOM", "Severity", "CRITICAL", { "color": "#9467bd", "label": "Mumbai (Milan Subway - 75cm)" } ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Water Depth (cm)",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "annotations": {
+          "horizontal": [
+            { "value": 20, "label": "2-Wheeler Threshold (20cm)", "color": "#e377c2" },
+            { "value": 30, "label": "Sedan Safe Limit (30cm)", "color": "#bcbd22" },
+            { "value": 55, "label": "SUV Max Wading Depth (55cm)", "color": "#17becf" }
+          ]
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 2,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Active Flooded Segments & Blocked Corridors",
+        "view": "timeSeries",
+        "stacked": true,
+        "region": "ap-south-1",
+        "metrics": [
+          [ "JalMarg/MonsoonIntelligence", "ActiveFloodedSegments", "City", "BLR", { "stat": "Sum" } ],
+          [ "JalMarg/MonsoonIntelligence", "ActiveFloodedSegments", "City", "DEL", { "stat": "Sum" } ],
+          [ "JalMarg/MonsoonIntelligence", "ActiveFloodedSegments", "City", "BOM", { "stat": "Sum" } ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Count of Active Roadblocks"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 8,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Vehicle Detour Rerouting Rate",
+        "view": "pie",
+        "region": "ap-south-1",
+        "metrics": [
+          [ "JalMarg/MonsoonIntelligence", "VehicleReroutes", "VehicleType", "BIKE", { "label": "2-Wheelers Diverted (High Risk)" } ],
+          [ "JalMarg/MonsoonIntelligence", "VehicleReroutes", "VehicleType", "SEDAN", { "label": "Sedans & Hatchbacks Diverted" } ],
+          [ "JalMarg/MonsoonIntelligence", "VehicleReroutes", "VehicleType", "SUV", { "label": "SUVs Passable" } ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 8,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Municipal De-Watering Pump Dispatch Latency",
+        "view": "timeSeries",
+        "region": "ap-south-1",
+        "metrics": [
+          [ "JalMarg/MonsoonIntelligence", "PumpDispatchLatencySec", "City", "BLR", { "stat": "Average", "label": "BBMP Dispatch SLA (sec)" } ],
+          [ "JalMarg/MonsoonIntelligence", "PumpDispatchLatencySec", "City", "DEL", { "stat": "Average", "label": "MCD / NDMC Dispatch SLA (sec)" } ],
+          [ "JalMarg/MonsoonIntelligence", "PumpDispatchLatencySec", "City", "BOM", { "stat": "Average", "label": "BMC Dispatch SLA (sec)" } ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Dispatch Latency (Seconds)",
+            "max": 60
+          }
+        }
+      }
+    },
+    {
+      "type": "alarm",
+      "x": 16,
+      "y": 8,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Monsoon Safety Alarms",
+        "alarms": [
+          "arn:aws:cloudwatch:ap-south-1:123456789012:alarm:JalMarg-CriticalDepthExceeded",
+          "arn:aws:cloudwatch:ap-south-1:123456789012:alarm:JalMarg-PumpDispatchBacklog",
+          "arn:aws:cloudwatch:ap-south-1:123456789012:alarm:JalMarg-SevereCongestionReroutes"
+        ]
+      }
+    }
+  ]
+}

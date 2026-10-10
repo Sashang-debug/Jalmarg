@@ -356,6 +356,58 @@ export const VEHICLE_THRESHOLDS = {
   WALK: 15
 };
 
+/**
+ * Calculates the divergent segment of directPath where it branches away from detourPath
+ * into the flood hazard, preventing overlapping red and blue lines on shared departure/arrival roads.
+ */
+export function getDivergentHazardPath(directPath, detourPath) {
+  if (!directPath || directPath.length < 2) return directPath || [];
+  if (!detourPath || detourPath.length < 2) return directPath;
+
+  // 1. Scan from start to find where directPath leaves the shared departure corridor
+  let startIdx = 0;
+  for (let i = 0; i < directPath.length - 1; i++) {
+    const pt = directPath[i];
+    let minDist = Infinity;
+    const jStart = Math.max(0, i - 20);
+    const jEnd = Math.min(detourPath.length, i + 35);
+    for (let j = jStart; j < jEnd; j++) {
+      const d = calculateHaversineDistance(pt[0], pt[1], detourPath[j][0], detourPath[j][1]);
+      if (d < minDist) minDist = d;
+    }
+    // If distance exceeds 45 meters (0.045 km), the route has branched off
+    if (minDist > 0.045) {
+      startIdx = Math.max(0, i - 1);
+      break;
+    }
+  }
+
+  // 2. Scan backwards from destination to find where directPath rejoins the arrival corridor
+  let endIdx = directPath.length - 1;
+  for (let i = directPath.length - 1; i > startIdx; i--) {
+    const pt = directPath[i];
+    let minDist = Infinity;
+    const remainingFromEnd = directPath.length - 1 - i;
+    const detourEndIdx = detourPath.length - 1 - remainingFromEnd;
+    const jStart = Math.max(0, detourEndIdx - 35);
+    const jEnd = Math.min(detourPath.length, detourEndIdx + 20);
+    for (let j = jStart; j < jEnd; j++) {
+      const d = calculateHaversineDistance(pt[0], pt[1], detourPath[j][0], detourPath[j][1]);
+      if (d < minDist) minDist = d;
+    }
+    if (minDist > 0.045) {
+      endIdx = Math.min(directPath.length - 1, i + 1);
+      break;
+    }
+  }
+
+  if (startIdx >= endIdx) {
+    return directPath;
+  }
+
+  return directPath.slice(startIdx, endIdx + 1);
+}
+
 // ==============================================================================
 // Dynamic Flood-Aware Routing Engine
 // Calculates safe flyover bypasses & clearance thresholds
@@ -517,6 +569,11 @@ export function calculateDynamicRoute(origin, destination, selectedCity, vehicle
 
   const detourExtraMins = Math.max(2, currentEstTimeMins - (vehicle === 'SUV' ? Math.max(3, Math.round(baseDirectMins * 0.9)) : vehicle === 'BIKE' ? Math.max(baseDirectMins + 2, Math.round(baseDirectMins * 1.15)) : vehicle === 'WALK' ? Math.round(baseDirectDist * 13.3) : baseDirectMins));
 
+  // Avoided hazard corridor (only drawn where path diverges into the flood, avoiding overlapping shared roads)
+  const avoidedHazardPath = isBlocked
+    ? getDivergentHazardPath(directPath, detourPath)
+    : [];
+
   return {
     origin,
     destination,
@@ -524,6 +581,7 @@ export function calculateDynamicRoute(origin, destination, selectedCity, vehicle
     hazardDepth,
     directPath,
     detourPath,
+    avoidedHazardPath,
     isDetourRequired: isBlocked,
     distanceKm: currentDistanceKm,
     estTimeMins: currentEstTimeMins,

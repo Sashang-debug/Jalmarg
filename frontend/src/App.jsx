@@ -7,6 +7,8 @@ import ReportModal from './components/ReportModal'
 import MunicipalPumpDashboard from './components/MunicipalPumpDashboard'
 import IncidentDetailModal from './components/IncidentDetailModal'
 import GoogleApiKeyModal from './components/GoogleApiKeyModal'
+import ObservabilityModal from './components/ObservabilityModal'
+import AudioRadarDrawer from './components/AudioRadarDrawer'
 import { 
   MULTI_CITY_INCIDENTS, 
   MULTI_CITY_POTHOLES, 
@@ -52,6 +54,7 @@ export default function App() {
   // Modals
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [isCivicDashboardOpen, setIsCivicDashboardOpen] = useState(false)
+  const [isObservabilityOpen, setIsObservabilityOpen] = useState(false)
   const [selectedIncident, setSelectedIncident] = useState(null)
 
   // Current city active telemetry
@@ -259,6 +262,7 @@ export default function App() {
           incidents={currentIncidents}
           potholes={currentPotholes}
           showPotholes={showPotholes}
+          showTraffic={showTraffic}
           vehicle={vehicle}
           activeRoute={activeRouteData}
           userLocation={userLocation}
@@ -311,6 +315,7 @@ export default function App() {
         selectedCity={selectedCity}
         onOpenReportModal={() => setIsReportModalOpen(true)}
         onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
+        onOpenObservability={() => setIsObservabilityOpen(true)}
         activePumpTicketsCount={activePumpTicketsCount}
         showPotholes={showPotholes}
         setShowPotholes={setShowPotholes}
@@ -339,6 +344,7 @@ export default function App() {
         setAudioRadarActive={setAudioRadarActive}
         onOpenReportModal={() => setIsReportModalOpen(true)}
         onOpenCivicDashboard={() => setIsCivicDashboardOpen(true)}
+        onOpenObservability={() => setIsObservabilityOpen(true)}
         onOpenKeyModal={() => setIsKeyModalOpen(true)}
         activePumpTicketsCount={activePumpTicketsCount}
         googleApiKey={googleApiKey}
@@ -360,6 +366,11 @@ export default function App() {
         onDispatchPump={handleDispatchPump}
       />
 
+      <ObservabilityModal
+        isOpen={isObservabilityOpen}
+        onClose={() => setIsObservabilityOpen(false)}
+      />
+
       <IncidentDetailModal
         incident={selectedIncident}
         onClose={() => setSelectedIncident(null)}
@@ -371,6 +382,15 @@ export default function App() {
         onClose={() => setIsKeyModalOpen(false)}
         currentApiKey={googleApiKey}
         onSaveApiKey={handleSaveApiKey}
+      />
+
+      {/* 6. HANDS-FREE AUDIO RADAR DRAWER */}
+      <AudioRadarDrawer
+        active={audioRadarActive}
+        onClose={() => setAudioRadarActive(false)}
+        routeData={activeRouteData}
+        isSidebarOpen={isSidebarOpen}
+        selectedCity={selectedCity}
       />
     </div>
   )

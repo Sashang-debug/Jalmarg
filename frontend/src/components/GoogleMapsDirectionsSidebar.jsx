@@ -22,7 +22,8 @@ import {
   Building2, 
   PlusCircle,
   Clock,
-  Sparkles
+  Sparkles,
+  Activity
 } from 'lucide-react'
 import { CITY_LANDMARKS, formatDuration } from '../data/mockTelemetry'
 
@@ -42,6 +43,7 @@ export default function GoogleMapsDirectionsSidebar({
   selectedCity,
   onOpenReportModal,
   onOpenCivicDashboard,
+  onOpenObservability,
   activePumpTicketsCount,
   showPotholes,
   setShowPotholes,
@@ -696,6 +698,29 @@ export default function GoogleMapsDirectionsSidebar({
               >
                 <Building2 size={14} />
                 <span>Pumps ({activePumpTicketsCount})</span>
+              </button>
+
+              {/* AWS CloudWatch & X-Ray Observability Cockpit */}
+              <button
+                onClick={onOpenObservability}
+                title="AWS CloudWatch Metrics & X-Ray Distributed Trace Cockpit"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #FF9900',
+                  background: '#FFFBEB',
+                  color: '#B45309',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(245, 158, 11, 0.15)'
+                }}
+              >
+                <Activity size={14} color="#D97706" />
+                <span>AWS Cockpit</span>
               </button>
             </div>
           </div>
