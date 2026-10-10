@@ -1,5 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Menu, Search, Navigation2, X, Bike, Car, Truck, Footprints, Droplets, AlertTriangle, Volume2, TrafficCone } from 'lucide-react'
+import {
+  Menu,
+  Search,
+  Navigation2,
+  X,
+  Bike,
+  Car,
+  Truck,
+  Footprints,
+  Droplets,
+  AlertTriangle,
+  Volume2,
+  TrafficCone,
+  Camera,
+  Crosshair
+} from 'lucide-react'
 import { CITY_LANDMARKS, MULTI_CITY_INCIDENTS } from '../data/mockTelemetry'
 
 export default function GoogleMapsSearchBar({
@@ -15,7 +30,8 @@ export default function GoogleMapsSearchBar({
   setAudioRadarActive,
   showTraffic,
   setShowTraffic,
-  onOpenReportModal
+  onOpenReportModal,
+  onAutoDetectLocation
 }) {
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
@@ -314,6 +330,58 @@ export default function GoogleMapsSearchBar({
         paddingBottom: '4px',
         scrollbarWidth: 'none'
       }}>
+        {/* Report Flood Live Chip */}
+        <button
+          onClick={onOpenReportModal}
+          id="chip-report-flood-search"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            background: '#FCE8E6',
+            color: '#C5221F',
+            border: '1px solid #F5C6CB',
+            borderRadius: '16px',
+            padding: '5px 12px',
+            fontSize: '12px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+            whiteSpace: 'nowrap'
+          }}
+          title="Upload real-time photo & report waterlogging"
+        >
+          <Camera size={13} color="#C5221F" />
+          <span>Report Flood</span>
+        </button>
+
+        {/* Trace Live Location Chip */}
+        {onAutoDetectLocation && (
+          <button
+            onClick={onAutoDetectLocation}
+            id="chip-trace-location-search"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              background: '#E8F0FE',
+              color: '#1A73E8',
+              border: '1px solid #D2E3FC',
+              borderRadius: '16px',
+              padding: '5px 12px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+              whiteSpace: 'nowrap'
+            }}
+            title="Trace current GPS location"
+          >
+            <Crosshair size={13} color="#1A73E8" />
+            <span>Trace Location</span>
+          </button>
+        )}
+
         {/* 2-Wheeler Mode */}
         <button
           onClick={() => { setVehicle('BIKE'); onOpenDirections(); }}

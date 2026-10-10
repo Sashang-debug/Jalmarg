@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Crosshair, Camera } from 'lucide-react'
 import InteractiveMap from './components/InteractiveMap'
 import GoogleMapsSearchBar from './components/GoogleMapsSearchBar'
 import GoogleMapsDirectionsSidebar from './components/GoogleMapsDirectionsSidebar'
@@ -32,6 +33,8 @@ export default function App() {
   const [audioRadarActive, setAudioRadarActive] = useState(false)
   const [userLocation, setUserLocation] = useState(null)
   const [isLocating, setIsLocating] = useState(false)
+  const [isLiveTrackingActive, setIsLiveTrackingActive] = useState(false)
+  const watchIdRef = useRef(null)
 
   // Google Maps Style Navigation & Sidebar Modes
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)       // Can be toggled with < / > button
@@ -144,8 +147,8 @@ export default function App() {
     }
   }
 
-  // 1. Auto-Fetch GPS Location on Initial Site Load (Fixes Bug 3)
-  const handleAutoDetectLocation = () => {
+  // 1. Auto-Fetch GPS Location on Initial Site Load
+  const handleAutoDetectLocation = (centerMap = true) => {
     if (!navigator.geolocation) {
       console.warn("Geolocation is not supported by your browser.")
       return
@@ -156,7 +159,14 @@ export default function App() {
       (position) => {
         const userLat = position.coords.latitude
         const userLng = position.coords.longitude
-        const newLoc = { lat: userLat, lng: userLng, name: 'Your location (Live GPS)' }
+        const acc = Math.round(position.coords.accuracy || 5)
+        const newLoc = {
+          lat: userLat,
+          lng: userLng,
+          name: `Your location (Live GPS ±${acc}m)`,
+          accuracy: acc,
+          shouldFlyTo: centerMap
+        }
         setUserLocation(newLoc)
         setOrigin(newLoc)
 
@@ -176,12 +186,70 @@ export default function App() {
         console.warn("Geolocation access denied or timed out:", error.message)
         setIsLocating(false)
       },
-      { timeout: 10000, enableHighAccuracy: true, maximumAge: 60000 }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
     )
   }
 
+  // 1b. Real-Time Continuous GPS Tracking Toggle
+  const toggleLiveTracking = () => {
+    if (isLiveTrackingActive) {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+        watchIdRef.current = null
+      }
+      setIsLiveTrackingActive(false)
+    } else {
+      if (!navigator.geolocation) {
+        alert("Geolocation is not supported on this device.")
+        return
+      }
+      setIsLocating(true)
+      const id = navigator.geolocation.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude
+          const lng = position.coords.longitude
+          const acc = Math.round(position.coords.accuracy || 5)
+          const liveLoc = {
+            lat,
+            lng,
+            name: `Your location (Live GPS ±${acc}m)`,
+            accuracy: acc,
+            shouldFlyTo: false
+          }
+          setUserLocation(liveLoc)
+          setIsLocating(false)
+          setIsLiveTrackingActive(true)
+
+          // Keep origin dynamically pinned if user selected "Your location"
+          setOrigin(prev => {
+            if (prev?.name?.includes('Your location') || prev?.name?.includes('Live GPS')) {
+              return liveLoc
+            }
+            return prev
+          })
+        },
+        (error) => {
+          console.warn("Continuous GPS watch error:", error.message)
+          setIsLocating(false)
+        },
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      )
+      watchIdRef.current = id
+      setIsLiveTrackingActive(true)
+    }
+  }
+
+  // Cleanup watcher on component unmount
   useEffect(() => {
-    handleAutoDetectLocation()
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    handleAutoDetectLocation(true)
   }, [])
 
   // 2. Point Swap and Map Click Handlers
@@ -209,12 +277,14 @@ export default function App() {
     setIsSidebarOpen(true)
   }
 
-  // 4. Add crowdsourced incident
+  // 4. Add crowdsourced incident in real time
   const handleAddIncident = (newIncident) => {
     setAllIncidents(prev => ({
       ...prev,
       [selectedCity]: [newIncident, ...(prev[selectedCity] || [])]
     }))
+    // Open verification modal so commuter immediately inspects their newly uploaded real-time flood pin
+    setSelectedIncident(newIncident)
   }
 
   // 5. Dispatch de-watering pump unit
@@ -275,6 +345,117 @@ export default function App() {
         />
       </div>
 
+      {/* Floating Google Maps Style Location & Report Action Controls */}
+      <div style={{
+        position: 'absolute',
+        bottom: '24px',
+        right: '16px',
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        gap: '10px',
+        pointerEvents: 'none'
+      }}>
+        {/* Floating Live Tracking HUD if active */}
+        {isLiveTrackingActive && userLocation && (
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.94)',
+            backdropFilter: 'blur(8px)',
+            border: '1.5px solid #1A73E8',
+            borderRadius: '24px',
+            padding: '6px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+            fontSize: '12px',
+            color: '#FFFFFF',
+            pointerEvents: 'auto'
+          }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }} className="pulse-radar" />
+            <span style={{ fontWeight: 600 }}>Live GPS Tracking: {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)} (±{userLocation.accuracy || 5}m)</span>
+            <button
+              onClick={toggleLiveTracking}
+              id="btn-hud-stop-tracking"
+              style={{
+                background: 'rgba(255,255,255,0.18)',
+                border: 'none',
+                color: '#E2E8F0',
+                borderRadius: '10px',
+                padding: '2px 8px',
+                fontSize: '10px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Stop
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto' }}>
+          {/* Quick Report Flood Floating Button */}
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            id="btn-fab-report-flood"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#D93025',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '24px',
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: 700,
+              boxShadow: '0 3px 12px rgba(217, 48, 37, 0.4)',
+              cursor: 'pointer',
+              transition: 'transform 0.15s, background 0.15s'
+            }}
+            title="Upload real-time photo of waterlogging"
+          >
+            <Camera size={16} />
+            <span>Report Flood</span>
+          </button>
+
+          {/* Google Maps Style My Location / Live Tracking FAB */}
+          <button
+            onClick={toggleLiveTracking}
+            id="btn-fab-my-location"
+            style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '50%',
+              background: '#FFFFFF',
+              border: isLiveTrackingActive ? '2px solid #1A73E8' : '1px solid rgba(0,0,0,0.15)',
+              boxShadow: isLiveTrackingActive ? '0 0 16px rgba(26, 115, 232, 0.6)' : '0 2px 8px rgba(0,0,0,0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              position: 'relative'
+            }}
+            title={isLiveTrackingActive ? 'Live GPS Tracking Active (Click to stop)' : 'Trace Current Location & Follow Me'}
+          >
+            <Crosshair size={22} color={isLiveTrackingActive ? '#1A73E8' : '#5F6368'} className={isLocating ? 'spin-icon' : ''} />
+            {isLiveTrackingActive && (
+              <span style={{
+                position: 'absolute',
+                top: '-2px',
+                right: '-2px',
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                background: '#10B981',
+                border: '2px solid #FFFFFF'
+              }} />
+            )}
+          </button>
+        </div>
+      </div>
+
       {/* ============================================================== */}
       {/* 2. FLOATING TOP SEARCH BAR (When Sidebar is Collapsed)          */}
       {/* ============================================================== */}
@@ -293,6 +474,7 @@ export default function App() {
           showTraffic={showTraffic}
           setShowTraffic={setShowTraffic}
           onOpenReportModal={() => setIsReportModalOpen(true)}
+          onAutoDetectLocation={handleAutoDetectLocation}
         />
       )}
 
@@ -357,6 +539,9 @@ export default function App() {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onAddIncident={handleAddIncident}
+        userLocation={userLocation}
+        selectedCity={selectedCity}
+        onAutoDetectLocation={handleAutoDetectLocation}
       />
 
       <MunicipalPumpDashboard
