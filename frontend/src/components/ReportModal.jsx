@@ -2,20 +2,15 @@ import React, { useState, useEffect, useRef } from 'react'
 import {
   X,
   Camera,
-  Mic,
   MapPin,
-  AlertTriangle,
-  CheckCircle2,
-  Sparkles,
-  Send,
-  Upload,
   RefreshCw,
   Crosshair,
-  Cpu,
-  Image as ImageIcon,
-  Check,
-  Radio,
-  FileImage
+  CheckCircle2,
+  AlertTriangle,
+  Send,
+  RotateCcw,
+  ShieldCheck,
+  Info
 } from 'lucide-react'
 import { CITY_LANDMARKS, calculateHaversineDistance, CITY_CONFIGS } from '../data/mockTelemetry'
 
@@ -27,100 +22,82 @@ export default function ReportModal({
   selectedCity = 'BLR',
   onAutoDetectLocation
 }) {
-  const [tab, setTab] = useState('FORM') // 'FORM' | 'VOICE_SIMULATOR'
-  const [roadName, setRoadName] = useState('Indiranagar 100ft Road Underpass')
-  const [anchor, setAnchor] = useState('BIKE_EXHAUST_SILENCER')
-  const [uploadedPhoto, setUploadedPhoto] = useState(
-    'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=600&q=80'
-  )
-  const [photoFileName, setPhotoFileName] = useState('scooter_waterline_sample.jpg')
-  const [isAnalyzingCV, setIsAnalyzingCV] = useState(false)
-  const [cvResult, setCvResult] = useState({
-    detectedAnchor: 'BIKE_EXHAUST_SILENCER',
-    confidence: 98.4,
-    label: 'Bike Silencer (~32 cm)'
-  })
-
-  // Real-time GPS Location Tracing State
+  // Live GPS Tracking State (strictly locked to commuter's current position)
   const [isLocating, setIsLocating] = useState(false)
-  const [gpsCoordinates, setGpsCoordinates] = useState(null)
-  const [gpsStatus, setGpsStatus] = useState('IDLE') // 'IDLE' | 'LOCATING' | 'SUCCESS' | 'ERROR'
-  const [gpsAccuracy, setGpsAccuracy] = useState(null)
+  const [gpsCoords, setGpsCoords] = useState(null)
+  const [roadName, setRoadName] = useState('')
+  const [note, setNote] = useState('')
 
-  const [voiceTranscript, setVoiceTranscript] = useState(
-    'Bhaiya, Marathahalli bridge ke neeche car ke bonnet tak paani aa gaya hai!'
-  )
-
+  // Live Camera State (strictly live photo from camera only)
+  const [capturedPhoto, setCapturedPhoto] = useState(null)
+  const [photoTimestamp, setPhotoTimestamp] = useState(null)
   const cameraInputRef = useRef(null)
-  const fileInputRef = useRef(null)
 
-  const ANCHOR_MAP = {
-    'TIRE_RIM_PARTIAL': { depth: 14, severity: 'PASSABLE', label: 'Tire Rim Partial (~14 cm - Passable)' },
-    'TIRE_RIM_FULL': { depth: 22, severity: 'MODERATE_RISK', label: 'Tire Rim Full (~22 cm - Caution)' },
-    'BIKE_EXHAUST_SILENCER': { depth: 32, severity: 'MODERATE_RISK', label: 'Bike Silencer (~32 cm - Scooter Danger)' },
-    'CAR_BUMPER_MID': { depth: 48, severity: 'CRITICAL_NO_ENTRY', label: 'Car Grille / Bumper (~48 cm - Critical)' },
-    'CAR_BONNET_HEADLIGHTS': { depth: 72, severity: 'CRITICAL_NO_ENTRY', label: 'Car Bonnet Submerged (~72 cm - Complete Block)' }
-  }
-
-  // Pre-configured realistic photo samples for instant testing
-  const PHOTO_PRESETS = [
+  // Simple, intuitive water depth levels
+  const WATER_LEVELS = [
     {
-      id: 'scooter',
-      label: '🛵 Scooter Silencer (~32cm)',
-      anchorKey: 'BIKE_EXHAUST_SILENCER',
-      url: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=600&q=80',
-      name: 'scooter_submerged_road.jpg'
+      id: 'SHALLOW',
+      depth: 15,
+      severity: 'PASSABLE',
+      title: 'Shallow (~15 cm)',
+      desc: 'Passable for all vehicles (tire rim)',
+      color: '#188038',
+      bg: '#E6F4EA'
     },
     {
-      id: 'car_bonnet',
-      label: '🌊 Car Bonnet Submerged (~72cm)',
-      anchorKey: 'CAR_BONNET_HEADLIGHTS',
-      url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=600&q=80',
-      name: 'deep_water_underpass.jpg'
+      id: 'MEDIUM',
+      depth: 30,
+      severity: 'MODERATE_RISK',
+      title: 'Medium (~30 cm)',
+      desc: 'Dangerous for 2-wheelers & bikes (silencer)',
+      color: '#B06000',
+      bg: '#FEF7E0'
     },
     {
-      id: 'car_grille',
-      label: '🚗 Car Grille Submerged (~48cm)',
-      anchorKey: 'CAR_BUMPER_MID',
-      url: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=600&q=80',
-      name: 'car_grille_waterline.jpg'
+      id: 'HIGH',
+      depth: 50,
+      severity: 'CRITICAL_NO_ENTRY',
+      title: 'High (~50 cm)',
+      desc: 'Dangerous for cars & sedans (grille level)',
+      color: '#C5221F',
+      bg: '#FCE8E6'
     },
     {
-      id: 'tire_shallow',
-      label: '🌧️ Tire Rim Partial (~14cm)',
-      anchorKey: 'TIRE_RIM_PARTIAL',
-      url: 'https://images.unsplash.com/photo-1527482797697-8795b05a13fe?auto=format&fit=crop&w=600&q=80',
-      name: 'shallow_street_runoff.jpg'
+      id: 'DEEP',
+      depth: 75,
+      severity: 'CRITICAL_NO_ENTRY',
+      title: 'Submerged (~75+ cm)',
+      desc: 'Road closed / impassable (bonnet level)',
+      color: '#A50E0E',
+      bg: '#FCE8E6'
     }
   ]
 
-  // Real-time GPS Location Tracer Function
-  const traceCurrentLocation = () => {
+  const [selectedLevelId, setSelectedLevelId] = useState('MEDIUM')
+
+  // Auto-trace live GPS coordinates whenever modal opens
+  const traceCurrentGps = () => {
     if (!navigator.geolocation) {
-      fallbackToExistingLocation()
+      applyFallbackGps()
       return
     }
 
     setIsLocating(true)
-    setGpsStatus('LOCATING')
-
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude
-        const lng = position.coords.longitude
-        const acc = Math.round(position.coords.accuracy || 5)
+      (pos) => {
+        const lat = pos.coords.latitude
+        const lng = pos.coords.longitude
+        const acc = Math.round(pos.coords.accuracy || 6)
 
-        setGpsCoordinates({ lat, lng, accuracy: acc })
-        setGpsAccuracy(acc)
-        setGpsStatus('SUCCESS')
+        setGpsCoords({ lat, lng, accuracy: acc })
         setIsLocating(false)
 
-        // Find nearest known landmark in the current city
+        // Find nearest landmark to give commuter a friendly road label
         const landmarks = CITY_LANDMARKS[selectedCity] || []
         let nearest = null
         let minDistance = Infinity
 
-        landmarks.forEach(lm => {
+        landmarks.forEach((lm) => {
           const d = calculateHaversineDistance(lat, lng, lm.lat, lm.lng)
           if (d < minDistance) {
             minDistance = d
@@ -128,141 +105,98 @@ export default function ReportModal({
           }
         })
 
-        if (nearest && minDistance < 6) {
-          setRoadName(`Near ${nearest.name} (Live GPS ±${acc}m)`)
+        if (nearest && minDistance < 5) {
+          setRoadName(`Near ${nearest.name}`)
         } else {
-          setRoadName(`Live Commuter Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`)
+          setRoadName(`Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`)
         }
       },
-      (error) => {
-        console.warn('Live location trace error:', error.message)
-        fallbackToExistingLocation()
+      (err) => {
+        console.warn('GPS trace error:', err.message)
+        applyFallbackGps()
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     )
   }
 
-  const fallbackToExistingLocation = () => {
+  const applyFallbackGps = () => {
     setIsLocating(false)
-    if (userLocation && userLocation.lat && userLocation.lng) {
-      setGpsCoordinates({
+    if (userLocation?.lat && userLocation?.lng) {
+      setGpsCoords({
         lat: userLocation.lat,
         lng: userLocation.lng,
         accuracy: userLocation.accuracy || 10
       })
-      setGpsAccuracy(userLocation.accuracy || 10)
-      setGpsStatus('SUCCESS')
-      setRoadName(userLocation.name || `Live GPS Point (${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)})`)
+      setRoadName(userLocation.name || `Current Location (${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)})`)
     } else {
       const cityCenter = CITY_CONFIGS[selectedCity]?.center || [12.9280, 77.6350]
-      setGpsCoordinates({ lat: cityCenter[0], lng: cityCenter[1], accuracy: 25 })
-      setGpsAccuracy(25)
-      setGpsStatus('ERROR')
+      setGpsCoords({ lat: cityCenter[0], lng: cityCenter[1], accuracy: 25 })
       const landmarks = CITY_LANDMARKS[selectedCity] || []
-      if (landmarks.length > 0) {
-        setRoadName(`${landmarks[0].name} (Estimated)`)
-      }
+      setRoadName(landmarks[0]?.name || 'Current Location')
     }
   }
 
-  // Auto-trace location immediately when modal opens
   useEffect(() => {
     if (isOpen) {
-      traceCurrentLocation()
+      traceCurrentGps()
     }
   }, [isOpen, selectedCity])
 
-  // Real-time Photo File Upload Handler
-  const handleFileSelect = (e) => {
+  // Handle direct camera photo capture
+  const handleCapturePhoto = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    setPhotoFileName(file.name)
     const reader = new FileReader()
     reader.onload = (event) => {
       const dataUrl = event.target?.result
       if (typeof dataUrl === 'string') {
-        setUploadedPhoto(dataUrl)
-        triggerComputerVisionScan('BIKE_EXHAUST_SILENCER')
+        setCapturedPhoto(dataUrl)
+        setPhotoTimestamp(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
       }
     }
     reader.readAsDataURL(file)
   }
 
-  // Simulated Real-Time AWS SageMaker / Bedrock Computer Vision Waterline Analyzer
-  const triggerComputerVisionScan = (suggestedAnchorKey) => {
-    setIsAnalyzingCV(true)
-    setTimeout(() => {
-      setIsAnalyzingCV(false)
-      const anchorInfo = ANCHOR_MAP[suggestedAnchorKey] || ANCHOR_MAP['BIKE_EXHAUST_SILENCER']
-      setAnchor(suggestedAnchorKey)
-      setCvResult({
-        detectedAnchor: suggestedAnchorKey,
-        confidence: Number((96.5 + Math.random() * 3).toFixed(1)),
-        label: anchorInfo.label
-      })
-    }, 1100)
-  }
-
-  const handleApplyPreset = (preset) => {
-    setUploadedPhoto(preset.url)
-    setPhotoFileName(preset.name)
-    triggerComputerVisionScan(preset.anchorKey)
+  const handleRetakePhoto = () => {
+    setCapturedPhoto(null)
+    setPhotoTimestamp(null)
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = ''
+    }
   }
 
   if (!isOpen) return null
 
-  const handleSubmitForm = (e) => {
-    e.preventDefault()
-    const anchorData = ANCHOR_MAP[anchor]
+  const selectedLevel = WATER_LEVELS.find((l) => l.id === selectedLevelId) || WATER_LEVELS[1]
 
-    const lat = gpsCoordinates?.lat || (CITY_CONFIGS[selectedCity]?.center[0] || 12.9280)
-    const lng = gpsCoordinates?.lng || (CITY_CONFIGS[selectedCity]?.center[1] || 77.6350)
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!capturedPhoto) {
+      alert('Please click a live photo from your camera before submitting.')
+      return
+    }
+
+    const lat = gpsCoords?.lat || (CITY_CONFIGS[selectedCity]?.center[0] || 12.9280)
+    const lng = gpsCoords?.lng || (CITY_CONFIGS[selectedCity]?.center[1] || 77.6350)
 
     const newInc = {
       id: `INC_LIVE_${Date.now()}`,
-      roadName: roadName || 'Live Citizen Waterlogging Report',
+      roadName: roadName || 'Current Location',
       city: selectedCity,
-      ward: `Ward ${Math.floor(Math.random() * 80 + 10)} (GPS Crowdsourced)`,
+      ward: 'Verified Live Citizen',
       lat: lat,
       lng: lng,
-      accuracyM: gpsAccuracy || 5,
-      depthCm: anchorData.depth,
-      severity: anchorData.severity,
-      source: uploadedPhoto?.startsWith('data:') ? 'CITIZEN_LIVE_CAMERA' : 'CITIZEN_PWA',
-      author: 'Live Commuter (Verified)',
-      riskDescription: `Real-time photo verified via CV Anchor: ${anchorData.label}.`,
+      accuracyM: gpsCoords?.accuracy || 6,
+      depthCm: selectedLevel.depth,
+      severity: selectedLevel.severity,
+      source: 'CITIZEN_LIVE_CAMERA',
+      author: 'Live Commuter (Verified GPS + Camera)',
+      riskDescription: note ? `${selectedLevel.desc}. Note: ${note}` : selectedLevel.desc,
       reportedAt: 'Just now',
-      photoUrl: uploadedPhoto,
-      pumpDispatched: anchorData.depth >= 35,
-      pumpStatus: anchorData.depth >= 35 ? 'QUEUE_PENDING' : 'MONITORING',
-      isLiveReport: true
-    }
-
-    onAddIncident(newInc)
-    onClose()
-  }
-
-  const handleSimulateVoice = () => {
-    const lat = gpsCoordinates?.lat || 12.9569
-    const lng = gpsCoordinates?.lng || 77.7011
-
-    const newInc = {
-      id: `INC_WHATSAPP_${Date.now()}`,
-      roadName: roadName || 'Marathahalli Multiplex Underpass',
-      city: selectedCity,
-      ward: 'Ward 85 (WhatsApp Auto-NER)',
-      lat: lat,
-      lng: lng,
-      depthCm: 72,
-      severity: 'CRITICAL_NO_ENTRY',
-      source: 'WHATSAPP_VOICE',
-      author: '+91 99887 XXXXX',
-      riskDescription: `Transcribe Audio: "${voiceTranscript}"`,
-      reportedAt: 'Just now',
-      photoUrl: uploadedPhoto,
-      pumpDispatched: true,
-      pumpStatus: 'PUMP_EN_ROUTE',
+      photoUrl: capturedPhoto,
+      pumpDispatched: selectedLevel.depth >= 35,
+      pumpStatus: selectedLevel.depth >= 35 ? 'QUEUE_PENDING' : 'MONITORING',
       isLiveReport: true
     }
 
@@ -275,612 +209,421 @@ export default function ReportModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.78)',
-        backdropFilter: 'blur(10px)',
+        background: 'rgba(32, 33, 36, 0.65)',
+        backdropFilter: 'blur(6px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 2500,
         padding: '16px',
-        overflowY: 'auto'
+        fontFamily: 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif'
       }}
     >
       <div
-        className="glass-panel-elevated"
         style={{
           width: '100%',
-          maxWidth: '520px',
-          maxHeight: '92vh',
-          overflowY: 'auto',
-          padding: '22px',
-          border: '1px solid var(--border-strong)',
-          position: 'relative',
+          maxWidth: '460px',
+          maxHeight: '90vh',
+          background: '#FFFFFF',
           borderRadius: '16px',
-          boxShadow: '0 24px 48px rgba(0,0,0,0.6)'
+          boxShadow: '0 12px 36px rgba(0,0,0,0.22)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          position: 'relative'
         }}
       >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          id="btn-close-report-modal"
-          style={{
-            position: 'absolute',
-            top: '16px',
-            right: '16px',
-            background: 'rgba(255,255,255,0.08)',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            padding: '6px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background 0.2s'
-          }}
-          title="Close Dialog"
-        >
-          <X size={18} />
-        </button>
-
-        {/* Modal Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #06B6D4, #0284C7)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 14px rgba(6, 182, 212, 0.35)'
-            }}
-          >
-            <Camera size={22} color="#FFFFFF" />
-          </div>
-          <div>
-            <h2 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', margin: 0, fontWeight: 700 }}>
-              Report Live Waterlogging
-            </h2>
-            <p style={{ fontSize: '0.78rem', color: 'var(--brand-cyan)', margin: 0, fontWeight: 600 }}>
-              Real-Time Photo Submersion & GPS Tracing Protocol
-            </p>
-          </div>
-        </div>
-
-        {/* Tab Switcher */}
+        {/* Header (Clean Google Maps Style) */}
         <div
           style={{
+            padding: '18px 20px 14px 20px',
+            borderBottom: '1px solid #E8EAED',
             display: 'flex',
-            background: 'rgba(0,0,0,0.45)',
-            padding: '4px',
-            borderRadius: '10px',
-            marginBottom: '16px'
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#FFFFFF'
           }}
         >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                background: '#E8F0FE',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Camera size={20} color="#1A73E8" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#202124', margin: 0, lineHeight: 1.2 }}>
+                Report Waterlogging
+              </h2>
+              <p style={{ fontSize: '12px', color: '#5F6368', margin: '2px 0 0 0' }}>
+                Live camera photo & GPS verified report
+              </p>
+            </div>
+          </div>
+
           <button
-            onClick={() => setTab('FORM')}
-            id="tab-btn-photo-form"
+            onClick={onClose}
+            id="btn-close-report-modal"
             style={{
-              flex: 1,
-              padding: '8px',
+              background: 'transparent',
               border: 'none',
-              borderRadius: '8px',
-              background: tab === 'FORM' ? 'rgba(6, 182, 212, 0.25)' : 'transparent',
-              color: tab === 'FORM' ? '#38BDF8' : 'var(--text-muted)',
-              fontSize: '0.82rem',
-              fontWeight: 700,
+              color: '#5F6368',
               cursor: 'pointer',
+              padding: '6px',
+              borderRadius: '50%',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px'
+              justifyContent: 'center'
             }}
+            title="Close"
           >
-            <Camera size={14} />
-            <span>Live Photo & GPS Trace</span>
-          </button>
-          <button
-            onClick={() => setTab('VOICE_SIMULATOR')}
-            id="tab-btn-voice-sim"
-            style={{
-              flex: 1,
-              padding: '8px',
-              border: 'none',
-              borderRadius: '8px',
-              background: tab === 'VOICE_SIMULATOR' ? 'rgba(6, 182, 212, 0.25)' : 'transparent',
-              color: tab === 'VOICE_SIMULATOR' ? '#38BDF8' : 'var(--text-muted)',
-              fontSize: '0.82rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px'
-            }}
-          >
-            <Mic size={14} />
-            <span>WhatsApp Voice AI</span>
+            <X size={20} />
           </button>
         </div>
 
-        {tab === 'FORM' ? (
-          <form onSubmit={handleSubmitForm} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* 1. LIVE GPS LOCATION TRACING CARD */}
-            <div
-              style={{
-                background: 'rgba(15, 23, 42, 0.7)',
-                border: '1px solid rgba(6, 182, 212, 0.35)',
-                borderRadius: '12px',
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Crosshair size={15} color="#06B6D4" />
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--brand-cyan)' }}>
-                    REAL-TIME GPS TELEMETRY
-                  </span>
+        {/* Form Body (Scrollable if needed) */}
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            padding: '16px 20px 20px 20px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px'
+          }}
+        >
+          {/* STEP 1: CURRENT LOCATION (GPS LOCKED) */}
+          <div
+            style={{
+              background: '#F8F9FA',
+              border: '1px solid #DADCE0',
+              borderRadius: '10px',
+              padding: '12px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: '#188038',
+                    boxShadow: '0 0 6px rgba(24, 128, 56, 0.6)'
+                  }}
+                />
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#188038', letterSpacing: '0.02em' }}>
+                  YOUR CURRENT LOCATION (GPS)
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={traceCurrentGps}
+                id="btn-refresh-gps-report"
+                style={{
+                  background: '#FFFFFF',
+                  border: '1px solid #DADCE0',
+                  color: '#1A73E8',
+                  borderRadius: '12px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="Refresh GPS"
+              >
+                <RefreshCw size={11} className={isLocating ? 'spin-icon' : ''} />
+                <span>{isLocating ? 'Locating...' : 'Refresh'}</span>
+              </button>
+            </div>
+
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#202124', marginBottom: '2px' }}>
+              {roadName || 'Detecting nearest road...'}
+            </div>
+
+            <div style={{ fontSize: '11.5px', color: '#5F6368', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>
+                {gpsCoords
+                  ? `${gpsCoords.lat.toFixed(5)}° N, ${gpsCoords.lng.toFixed(5)}° E`
+                  : 'Acquiring GPS fix...'}
+              </span>
+              {gpsCoords?.accuracy && (
+                <span style={{ color: '#188038', fontWeight: 600 }}>
+                  (±{gpsCoords.accuracy}m accuracy)
+                </span>
+              )}
+            </div>
+
+            <div style={{ marginTop: '8px' }}>
+              <input
+                type="text"
+                id="input-report-roadname"
+                value={roadName}
+                onChange={(e) => setRoadName(e.target.value)}
+                placeholder="Add road details (e.g. Underpass exit, near flyover)"
+                style={{
+                  width: '100%',
+                  background: '#FFFFFF',
+                  border: '1px solid #DADCE0',
+                  borderRadius: '6px',
+                  padding: '7px 10px',
+                  fontSize: '12.5px',
+                  color: '#202124',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* STEP 2: REAL-TIME CAMERA PHOTO (CAMERA ONLY) */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#202124', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Camera size={14} color="#1A73E8" />
+                <span>Real-Time Camera Photo</span>
+                <span style={{ color: '#D93025' }}>*</span>
+              </label>
+
+              <span style={{ fontSize: '11px', color: '#188038', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <ShieldCheck size={12} />
+                <span>Camera Only (Verified)</span>
+              </span>
+            </div>
+
+            {/* Hidden native camera capture input */}
+            <input
+              type="file"
+              ref={cameraInputRef}
+              accept="image/*"
+              capture="environment"
+              id="input-camera-only"
+              style={{ display: 'none' }}
+              onChange={handleCapturePhoto}
+            />
+
+            {!capturedPhoto ? (
+              /* Camera Trigger Card */
+              <div
+                onClick={() => cameraInputRef.current?.click()}
+                id="btn-trigger-camera"
+                style={{
+                  border: '2px dashed #1A73E8',
+                  borderRadius: '12px',
+                  background: '#F8FAFD',
+                  padding: '24px 16px',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <div
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    background: '#E8F0FE',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Camera size={24} color="#1A73E8" />
                 </div>
 
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1A73E8' }}>
+                  Tap to Take Live Photo
+                </div>
+
+                <div style={{ fontSize: '11.5px', color: '#5F6368', maxWidth: '280px', lineHeight: 1.4 }}>
+                  Only live photos from your device camera are accepted to ensure verified, reliable reports.
+                </div>
+              </div>
+            ) : (
+              /* Captured Photo Preview Card */
+              <div
+                style={{
+                  border: '1px solid #DADCE0',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  background: '#000000',
+                  position: 'relative'
+                }}
+              >
+                <img
+                  src={capturedPhoto}
+                  alt="Live flood evidence"
+                  style={{
+                    width: '100%',
+                    height: '180px',
+                    objectFit: 'cover',
+                    display: 'block'
+                  }}
+                />
+
+                {/* Overlaid Verified Tag */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    left: '10px',
+                    background: 'rgba(24, 128, 56, 0.9)',
+                    backdropFilter: 'blur(4px)',
+                    color: '#FFFFFF',
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <CheckCircle2 size={12} />
+                  <span>Verified Camera Photo ({photoTimestamp || 'Just now'})</span>
+                </div>
+
+                {/* Retake Button */}
                 <button
                   type="button"
-                  onClick={traceCurrentLocation}
-                  id="btn-trace-location-modal"
+                  id="btn-retake-photo"
+                  onClick={handleRetakePhoto}
                   style={{
-                    background: 'rgba(6, 182, 212, 0.15)',
-                    border: '1px solid rgba(6, 182, 212, 0.4)',
-                    color: '#38BDF8',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
+                    position: 'absolute',
+                    bottom: '10px',
+                    right: '10px',
+                    background: 'rgba(32, 33, 36, 0.85)',
+                    backdropFilter: 'blur(4px)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '14px',
+                    padding: '5px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px'
                   }}
-                  title="Re-query GPS satellite coordinates"
                 >
-                  <RefreshCw size={11} className={isLocating ? 'spin-icon' : ''} />
-                  <span>{isLocating ? 'Tracing...' : 'Re-Trace GPS'}</span>
+                  <RotateCcw size={12} />
+                  <span>Retake</span>
                 </button>
               </div>
+            )}
+          </div>
 
-              {/* Coordinates Pill */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: 'rgba(0,0,0,0.3)',
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  fontSize: '0.74rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      background: gpsStatus === 'SUCCESS' ? '#10B981' : gpsStatus === 'LOCATING' ? '#F59E0B' : '#EF4444',
-                      boxShadow: gpsStatus === 'SUCCESS' ? '0 0 8px #10B981' : 'none'
-                    }}
-                  />
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    {isLocating
-                      ? '🛰️ Acquiring precision GPS fix...'
-                      : gpsCoordinates
-                      ? `Lat: ${gpsCoordinates.lat.toFixed(5)}, Lng: ${gpsCoordinates.lng.toFixed(5)}`
-                      : '🛰️ GPS coordinates pending'}
-                  </span>
-                </div>
+          {/* STEP 3: WATER LEVEL SELECTION (4 SIMPLE TAP CARDS) */}
+          <div>
+            <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#202124', display: 'block', marginBottom: '8px' }}>
+              Water Level on Road
+            </label>
 
-                {gpsAccuracy && (
-                  <span style={{ color: '#10B981', fontWeight: 700 }}>
-                    ±{gpsAccuracy}m precision
-                  </span>
-                )}
-              </div>
-
-              {/* Road / Landmark Field */}
-              <div>
-                <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '3px' }}>
-                  Road / Landmark Name (Auto-resolved from GPS)
-                </label>
-                <input
-                  type="text"
-                  id="input-report-roadname"
-                  value={roadName}
-                  onChange={(e) => setRoadName(e.target.value)}
-                  placeholder="e.g. Indiranagar 100ft Road Underpass"
-                  style={{
-                    width: '100%',
-                    background: 'rgba(0,0,0,0.4)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                    padding: '7px 10px',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.82rem'
-                  }}
-                  required
-                />
-              </div>
-            </div>
-
-            {/* 2. REAL-TIME PHOTO CAPTURE & UPLOAD SECTION */}
-            <div
-              style={{
-                background: 'rgba(15, 23, 42, 0.7)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '12px',
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Camera size={15} color="#38BDF8" />
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    REAL-TIME FLOOD PHOTO
-                  </span>
-                </div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--brand-cyan)', fontWeight: 600 }}>
-                  SageMaker CV Model Active
-                </span>
-              </div>
-
-              {/* Hidden File and Camera Inputs */}
-              <input
-                type="file"
-                ref={cameraInputRef}
-                accept="image/*"
-                capture="environment"
-                id="input-camera-capture"
-                style={{ display: 'none' }}
-                onChange={handleFileSelect}
-              />
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                id="input-gallery-upload"
-                style={{ display: 'none' }}
-                onChange={handleFileSelect}
-              />
-
-              {/* Photo Preview Container with CV Scanning Laser Overlay */}
-              <div
-                style={{
-                  width: '100%',
-                  height: '160px',
-                  borderRadius: '10px',
-                  overflow: 'hidden',
-                  position: 'relative',
-                  border: '1px solid rgba(6, 182, 212, 0.4)',
-                  background: '#0B0F19'
-                }}
-              >
-                <img
-                  src={uploadedPhoto}
-                  alt="Real-time waterlogging evidence"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-
-                {/* Laser Waterline Scanning Effect */}
-                {isAnalyzingCV && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              {WATER_LEVELS.map((level) => {
+                const isSelected = selectedLevelId === level.id
+                return (
                   <div
+                    key={level.id}
+                    id={`card-level-${level.id}`}
+                    onClick={() => setSelectedLevelId(level.id)}
                     style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      height: '3px',
-                      background: '#06B6D4',
-                      boxShadow: '0 0 15px #06B6D4, 0 0 30px #06B6D4',
-                      animation: 'scanWaterline 1.1s ease-in-out infinite',
-                      zIndex: 10
-                    }}
-                  />
-                )}
-
-                {/* Analyzing Badge */}
-                {isAnalyzingCV && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      background: 'rgba(6, 182, 212, 0.25)',
-                      backdropFilter: 'blur(2px)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      zIndex: 11
+                      border: isSelected ? `2px solid ${level.color}` : '1px solid #DADCE0',
+                      background: isSelected ? level.bg : '#FFFFFF',
+                      borderRadius: '10px',
+                      padding: '10px',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s, background 0.15s'
                     }}
                   >
-                    <Cpu size={24} color="#FFFFFF" className="spin-icon" />
-                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '0.04em' }}>
-                      AI ESTIMATING WATER DEPTH...
-                    </span>
-                  </div>
-                )}
-
-                {/* Bottom Photo Telemetry HUD */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: '8px',
-                    left: '8px',
-                    right: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    zIndex: 5
-                  }}
-                >
-                  <div
-                    style={{
-                      background: 'rgba(0, 0, 0, 0.75)',
-                      backdropFilter: 'blur(6px)',
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      fontSize: '0.7rem',
-                      color: '#E2E8F0',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <CheckCircle2 size={12} color="#10B981" />
-                    <span>{photoFileName}</span>
-                  </div>
-
-                  {cvResult && !isAnalyzingCV && (
-                    <div
-                      style={{
-                        background: 'rgba(6, 182, 212, 0.9)',
-                        color: '#080C14',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        fontSize: '0.7rem',
-                        fontWeight: 800
-                      }}
-                    >
-                      CV Match: {cvResult.confidence}%
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span style={{ fontSize: '12.5px', fontWeight: 700, color: isSelected ? level.color : '#202124' }}>
+                        {level.title}
+                      </span>
+                      {isSelected && <CheckCircle2 size={14} color={level.color} />}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Upload & Camera Buttons */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <button
-                  type="button"
-                  id="btn-take-live-photo"
-                  onClick={() => cameraInputRef.current?.click()}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '8px',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(6, 182, 212, 0.4)',
-                    background: 'rgba(6, 182, 212, 0.15)',
-                    color: '#38BDF8',
-                    fontSize: '0.78rem',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Camera size={14} />
-                  <span>Take Live Photo</span>
-                </button>
-
-                <button
-                  type="button"
-                  id="btn-upload-gallery-photo"
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '8px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-subtle)',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.78rem',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Upload size={14} />
-                  <span>Upload from Files</span>
-                </button>
-              </div>
-
-              {/* Quick Preset Buttons for Instant Desktop Testing */}
-              <div>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '5px' }}>
-                  Quick Test Presets (Desktop Simulation):
-                </span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                  {PHOTO_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      id={`btn-preset-${preset.id}`}
-                      onClick={() => handleApplyPreset(preset)}
-                      style={{
-                        background: uploadedPhoto === preset.url ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                        border: uploadedPhoto === preset.url ? '1px solid #06B6D4' : '1px solid var(--border-subtle)',
-                        color: uploadedPhoto === preset.url ? '#38BDF8' : 'var(--text-secondary)',
-                        fontSize: '0.68rem',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontWeight: 600
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                    <div style={{ fontSize: '11px', color: '#5F6368', lineHeight: 1.3 }}>
+                      {level.desc}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
+          </div>
 
-            {/* 3. VISUAL SUBMERSION ANCHOR DROPDOWN */}
-            <div>
-              <label style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                Visual Submersion Reference Object (SageMaker Anchor)
-              </label>
-              <select
-                id="select-anchor-object"
-                value={anchor}
-                onChange={(e) => setAnchor(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: '#0D121F',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  padding: '9px 12px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.82rem',
-                  cursor: 'pointer'
-                }}
-              >
-                {Object.entries(ANCHOR_MAP).map(([key, val]) => (
-                  <option key={key} value={key}>
-                    {val.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Calculated Depth Preview Badge */}
-            <div
+          {/* STEP 4: QUICK NOTE (OPTIONAL) */}
+          <div>
+            <label style={{ fontSize: '12px', fontWeight: 600, color: '#5F6368', display: 'block', marginBottom: '4px' }}>
+              Additional Details (Optional)
+            </label>
+            <input
+              type="text"
+              id="input-report-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Underpass entrance blocked, 1 auto stalled"
               style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: '8px',
-                padding: '10px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                border: '1px solid var(--border-subtle)'
+                width: '100%',
+                background: '#FFFFFF',
+                border: '1px solid #DADCE0',
+                borderRadius: '6px',
+                padding: '8px 10px',
+                fontSize: '12.5px',
+                color: '#202124',
+                boxSizing: 'border-box'
               }}
-            >
-              <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Estimated Water Depth:</span>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '1px' }}>
-                  Status: {ANCHOR_MAP[anchor].severity.replace(/_/g, ' ')}
-                </div>
-              </div>
-              <span
-                id="badge-calculated-water-depth"
-                style={{
-                  fontSize: '1.2rem',
-                  fontWeight: 800,
-                  color:
-                    ANCHOR_MAP[anchor].severity === 'CRITICAL_NO_ENTRY'
-                      ? 'var(--status-critical)'
-                      : ANCHOR_MAP[anchor].severity === 'MODERATE_RISK'
-                      ? 'var(--status-caution)'
-                      : 'var(--status-safe)'
-                }}
-                className="tabular-nums"
-              >
-                {ANCHOR_MAP[anchor].depth} cm
-              </span>
-            </div>
+            />
+          </div>
 
-            {/* Submit Button */}
+          {/* SUBMIT BUTTON */}
+          <div style={{ marginTop: '4px' }}>
             <button
               type="submit"
               id="btn-submit-live-report"
+              disabled={!capturedPhoto}
               style={{
                 width: '100%',
                 padding: '12px',
-                borderRadius: '8px',
+                borderRadius: '24px',
                 border: 'none',
-                background: 'linear-gradient(135deg, #06B6D4 0%, #0284C7 100%)',
-                color: '#FFFFFF',
+                background: capturedPhoto ? '#1A73E8' : '#DADCE0',
+                color: capturedPhoto ? '#FFFFFF' : '#80868B',
                 fontWeight: 700,
-                fontSize: '0.88rem',
-                cursor: 'pointer',
+                fontSize: '14px',
+                cursor: capturedPhoto ? 'pointer' : 'not-allowed',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: 'var(--shadow-glow-cyan)',
-                marginTop: '4px'
+                boxShadow: capturedPhoto ? '0 2px 8px rgba(26, 115, 232, 0.35)' : 'none',
+                transition: 'background 0.2s'
               }}
             >
-              <Send size={16} />
-              <span>Submit Live Photo & Pin to Map</span>
+              <Send size={15} />
+              <span>{capturedPhoto ? 'Submit Verified Flood Report' : 'Take Camera Photo to Submit'}</span>
             </button>
-          </form>
-        ) : (
-          /* WHATSAPP VOICE SIMULATOR TAB */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div
-              style={{
-                background: 'rgba(6, 182, 212, 0.08)',
-                border: '1px solid rgba(6, 182, 212, 0.25)',
-                borderRadius: '8px',
-                padding: '14px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <Mic size={16} color="var(--brand-cyan)" />
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--brand-cyan)' }}>
-                  Inbound WhatsApp Audio Note
-                </span>
-              </div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>
-                "{voiceTranscript}"
+
+            {!capturedPhoto && (
+              <p style={{ fontSize: '11px', color: '#D93025', textAlign: 'center', margin: '6px 0 0 0' }}>
+                * A live camera photo is required to ensure trusted crowd reporting
               </p>
-            </div>
-
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4, margin: 0 }}>
-              Simulates Amazon Transcribe converting speech to text → Bedrock extracting location & depth anchor
-              → CV Depth Estimator detecting "bonnet" → 72 cm Critical Hazard.
-            </p>
-
-            <button
-              onClick={handleSimulateVoice}
-              id="btn-process-voice-note"
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                color: '#FFFFFF',
-                fontWeight: 700,
-                fontSize: '0.88rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <Sparkles size={16} />
-              <span>Process Voice Note & Publish Incident</span>
-            </button>
+            )}
           </div>
-        )}
+        </form>
       </div>
     </div>
   )
