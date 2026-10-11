@@ -244,6 +244,18 @@ Before a wider public rollout, the next priorities are submission-abuse controls
 
 The OpenStreetMap fallback uses public map/geocoding infrastructure for modest interactive use. Larger deployments need appropriate providers and must follow the [OSMF tile policy](https://operations.osmfoundation.org/policies/tiles/) and [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/).
 
+## Municipal access for judges
+
+- **Sign-in:** https://d2vv0vxqbvoy73.cloudfront.net/#/signin
+- **Email:** municipal.gwalior.demo@jalmarg.invalid
+- **Password:** JalMargDemo!2026#Gwl
+- **Municipal workspace:** https://d2vv0vxqbvoy73.cloudfront.net/#/municipal
+
+1. Open the sign-in page.
+2. Select **Continue to sign in**.
+3. Enter the demo credentials.
+4. Open the municipal workspace to review reports and work progress.
+
 ---
 
 <div align="center">
