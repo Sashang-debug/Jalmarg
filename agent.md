@@ -586,3 +586,16 @@ authoritative status of the improvement work.
 - Published the frontend to the existing private S3/CloudFront hosting without
   deleting bucket objects; invalidation `IC5J1WDBCPM9HLXQYB1LBP6YKN` completed.
   The deployed test lab passed at https://d2vv0vxqbvoy73.cloudfront.net/.
+
+## README presentation refresh — 2026-10-11
+
+- Reworked the GitHub README around the waterlogging problem, intended impact,
+  citizen-to-municipal solution, implemented features, and a three-minute demo.
+- Added product screenshots, a Mermaid architecture diagram, the incident
+  lifecycle, and an AWS service table grounded in the current SAM/hosting stacks.
+- Kept local setup, configuration, verification commands, routing/photo limitations,
+  and the distinction between active features and legacy experiments.
+- Added the requested “Made with ❤️ for the Build Bharat Hackathon” footer.
+- Documentation validation: checked 28 link/image references (all local targets
+  exist), balanced code fences, and `git diff --check`. No application code changed;
+  application tests and live deployment checks were not rerun for this edit.
