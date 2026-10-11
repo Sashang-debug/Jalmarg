@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { MapPinned, Building2, ArrowLeft, RefreshCw, Search, ClipboardList, Camera, ShieldCheck } from 'lucide-react'
+import {
+  ArrowLeft, Building2, Camera, CheckCircle2, ChevronDown, ClipboardList,
+  Clock3, Droplets, History, Image, MapPin, MapPinned, RefreshCw, Search,
+  ShieldCheck, Users, Wrench
+} from 'lucide-react'
 import { apiRequest, timeAgo } from '../utils/incidentsApi'
 import { CITIES } from '../utils/cities'
 import { isActiveIncident } from '../utils/floodRouting'
@@ -7,21 +11,282 @@ import { WORK_LABELS, workActions, priority } from '../utils/municipalPolicy'
 import InteractiveMap from './InteractiveMap'
 import ReportEvidence from './ReportEvidence'
 import { preparePhoto } from './ReportComposer'
-const ACTIONS={REVIEW:'Begin review',ASSIGN:'Assign worker',START:'Start work',REJECT:'Reject report',DUPLICATE:'Link duplicate',SUBMIT_RESOLUTION:'Submit completion for review',APPROVE_RESOLUTION:'Approve resolution',REOPEN:'Reopen for review'}
-function TaskEditor({ item, items, workers, session, profile, onAction, busy }) {
- const [note,setNote]=useState(''),[assignee,setAssignee]=useState(item.workTicket?.assigneeSub||''),[duplicate,setDuplicate]=useState(''),[photo,setPhoto]=useState(null),[uploading,setUploading]=useState(false),[error,setError]=useState('')
- const actions=workActions(item,profile.id)
- async function upload(event){const file=event.target.files?.[0];if(!file)return;setUploading(true);setPhoto(null);setError('');try{const prepared=await preparePhoto(file);const result=await apiRequest('/evidence',{token:session.token,body:{data:prepared.data,contentType:prepared.contentType}});setPhoto({...result,preview:prepared.preview})}catch(e){setError(e.message)}finally{setUploading(false)}}
- return <div className="task-editor"><h3>Update this incident</h3>{actions.length?<><label>Work note<textarea required maxLength={300} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you review or do on site?"/></label>{actions.includes('ASSIGN')&&<label>Assign to<select value={assignee} onChange={e=>setAssignee(e.target.value)}><option value="">Choose approved worker</option>{workers.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}{actions.includes('DUPLICATE')&&<label>Original incident (for linking a duplicate)<select value={duplicate} onChange={e=>setDuplicate(e.target.value)}><option value="">Choose an open incident</option>{items.filter(i=>i.id!==item.id&&!['RESOLVED','REJECTED','DUPLICATE'].includes(i.workStatus)).map(i=><option key={i.id} value={i.id}>{i.roadName}</option>)}</select></label>}{actions.includes('SUBMIT_RESOLUTION')&&<div className="resolution-upload"><label><Camera size={18}/>After-photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={upload} disabled={uploading||busy}/></label>{photo&&<img src={photo.preview} alt="After-photo selected for completion review"/>}<p>{uploading?'Uploading after-photo…':photo?'After-photo uploaded. Add a completion note.':'Upload a recent photo documenting the completed work.'}</p></div>}<div className="task-actions">{actions.map(action=><button className={['REJECT','DUPLICATE','REOPEN'].includes(action)?'secondary-button':'primary-button'} key={action} disabled={busy||uploading||!note.trim()||(action==='ASSIGN'&&!assignee)||(action==='DUPLICATE'&&!duplicate)||(action==='SUBMIT_RESOLUTION'&&!photo)} onClick={()=>onAction(action,{note,assigneeSub:assignee,duplicateOf:duplicate,evidenceKey:photo?.evidenceKey})}>{ACTIONS[action]}</button>)}</div></>:<p>Work is assigned to {item.workTicket?.assigneeName||'another worker'}. The assigned worker provides progress and completion evidence.</p>}{error&&<p role="alert" className="error-message">{error}</p>}<p className="help-text">Updates are recorded in the incident history. Completion needs another approved worker's review.</p></div>
+
+const DEFAULT_NOTES = {
+  TAKE_AND_START: 'Worker accepted this location and started field work.',
+  REOPEN: 'Water is still present. Further field work is required.',
+  APPROVE_RESOLUTION: 'Completion evidence independently reviewed and accepted.',
+  ASSIGN: 'Location assigned to an approved worker.',
+  REJECT: 'Report reviewed and marked as not actionable.',
+  DUPLICATE: 'Report linked to an existing affected location.'
 }
+
+const FILTERS = [
+  { value: 'OPEN', label: 'Needs action', icon: Droplets },
+  { value: 'MINE', label: 'My locations', icon: Wrench },
+  { value: 'RESOLUTION_SUBMITTED', label: 'Verify completion', icon: ShieldCheck },
+  { value: 'ALL', label: 'History', icon: History }
+]
+
+function matchesFilter(item, filter, userId) {
+  if (filter === 'ALL') return true
+  if (filter === 'MINE') return item.workTicket?.assigneeSub === userId && !['RESOLVED', 'REJECTED'].includes(item.workStatus)
+  if (filter === 'RESOLUTION_SUBMITTED') return item.workStatus === filter
+  return !['RESOLVED', 'REJECTED', 'DUPLICATE'].includes(item.workStatus)
+}
+
+function sortQueue(list) {
+  return [...list].sort((a, b) => priority(a).rank - priority(b).rank || Date.parse(a.createdAt) - Date.parse(b.createdAt))
+}
+
+function StatusChoice({ icon: Icon, label, detail, active, disabled, onClick, tone = '' }) {
+  const className = `field-status-choice ${active ? 'active' : ''} ${tone}`
+  const content = <><span className="field-status-icon"><Icon size={21}/></span><span><strong>{label}</strong><small>{detail}</small></span>{active && <CheckCircle2 className="field-status-check" size={18}/>}</>
+  return onClick ? <button type="button" className={className} disabled={disabled} onClick={onClick}>{content}</button> : <div className={className} aria-current={active ? 'step' : undefined}>{content}</div>
+}
+
+function TaskEditor({ item, items, workers, session, profile, onAction, onEvidence, evidenceReviewed, busy }) {
+  const [note, setNote] = useState('')
+  const [assignee, setAssignee] = useState(item.workTicket?.assigneeSub || profile.id)
+  const [duplicate, setDuplicate] = useState('')
+  const [photo, setPhoto] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [completionOpen, setCompletionOpen] = useState(false)
+  const [error, setError] = useState('')
+  const actions = workActions(item, profile.id)
+  const mine = item.workTicket?.assigneeSub === profile.id
+  const newOrFlooded = ['REPORTED', 'REOPENED', 'UNDER_REVIEW'].includes(item.workStatus)
+  const ongoing = ['ASSIGNED', 'IN_PROGRESS'].includes(item.workStatus)
+  const completionPending = item.workStatus === 'RESOLUTION_SUBMITTED'
+  const completed = item.workStatus === 'RESOLVED'
+
+  async function upload(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setUploading(true); setPhoto(null); setError('')
+    try {
+      const prepared = await preparePhoto(file)
+      const result = await apiRequest('/evidence', { token: session.token, body: { data: prepared.data, contentType: prepared.contentType } })
+      setPhoto({ ...result, preview: prepared.preview })
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function update(action, fields = {}) {
+    onAction(action, { note: note.trim() || DEFAULT_NOTES[action], ...fields })
+  }
+
+  function completedAction() {
+    if (actions.includes('SUBMIT_RESOLUTION')) return setCompletionOpen(true)
+    if (!actions.includes('APPROVE_RESOLUTION')) return
+    if (!evidenceReviewed) return onEvidence()
+    update('APPROVE_RESOLUTION')
+  }
+
+  const completedDetail = completed
+    ? 'Verified by another municipal worker.'
+    : completionPending && mine
+      ? 'Waiting for another worker to verify your proof.'
+      : completionPending && !evidenceReviewed
+        ? 'Open the photos, then confirm the result.'
+        : completionPending
+          ? 'Evidence reviewed. Confirm this location is clear.'
+          : item.workStatus === 'IN_PROGRESS'
+            ? 'Add an after-photo and a completion note.'
+            : 'Available after work has started.'
+
+  return <div className="task-editor">
+    <div className="task-editor-heading">
+      <div><h3>Update field status</h3><p>Choose the status that matches what you see at this location.</p></div>
+      <span className="save-note"><Clock3 size={15}/>Saved to history</span>
+    </div>
+
+    <div className="field-status-grid" aria-label="Field status">
+      <StatusChoice
+        icon={Droplets}
+        label="Still flooded"
+        detail={newOrFlooded ? 'The location still needs attention.' : 'Reopen this location if water remains.'}
+        active={newOrFlooded}
+        disabled={busy || !actions.includes('REOPEN')}
+        onClick={actions.includes('REOPEN') ? () => update('REOPEN') : null}
+        tone="water-status"
+      />
+      <StatusChoice
+        icon={Wrench}
+        label="Work ongoing"
+        detail={item.workStatus === 'IN_PROGRESS' ? 'You are working on this location.' : item.workStatus === 'ASSIGNED' && !mine ? `Assigned to ${item.workTicket?.assigneeName}.` : 'Take this location and start work.'}
+        active={ongoing}
+        disabled={busy || !actions.includes('TAKE_AND_START')}
+        onClick={actions.includes('TAKE_AND_START') ? () => update('TAKE_AND_START') : null}
+        tone="work-status"
+      />
+      <StatusChoice
+        icon={CheckCircle2}
+        label={completionPending && !mine ? 'Verify completed' : 'Completed'}
+        detail={completedDetail}
+        active={completionPending || completed}
+        disabled={busy || completed || completionPending && mine || !actions.includes('SUBMIT_RESOLUTION') && !actions.includes('APPROVE_RESOLUTION')}
+        onClick={actions.includes('SUBMIT_RESOLUTION') || actions.includes('APPROVE_RESOLUTION') ? completedAction : null}
+        tone="complete-status"
+      />
+    </div>
+
+    {completionPending && !mine && !evidenceReviewed && <button type="button" className="evidence-reminder" onClick={onEvidence}><Image size={18}/>Open citizen and completion photos before verifying</button>}
+
+    {(completionOpen || photo) && actions.includes('SUBMIT_RESOLUTION') && <section className="completion-panel" aria-label="Completion evidence">
+      <div className="completion-panel-copy"><Camera size={22}/><div><h4>Show the completed work</h4><p>Upload a recent after-photo. Another approved worker will verify it.</p></div></div>
+      <label className="photo-upload-control">
+        <Camera size={18}/><span>{uploading ? 'Uploading photo...' : photo ? 'Replace after-photo' : 'Choose after-photo'}</span>
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={upload} disabled={uploading || busy}/>
+      </label>
+      {photo && <img src={photo.preview} alt="After-photo ready for completion review"/>}
+      <label className="field-note-label">Completion note<textarea required maxLength={300} value={note} onChange={event => setNote(event.target.value)} placeholder="What work was completed?"/></label>
+      <button type="button" className="primary-button submit-completion" disabled={busy || uploading || !photo || !note.trim()} onClick={() => update('SUBMIT_RESOLUTION', { evidenceKey: photo?.evidenceKey })}>{busy ? 'Saving...' : 'Send for verification'}</button>
+    </section>}
+
+    {!completionOpen && <label className="field-note-label">Field note <span>optional</span><textarea maxLength={300} value={note} onChange={event => setNote(event.target.value)} placeholder="Add what you saw or did at this location"/></label>}
+
+    {(actions.includes('ASSIGN') || actions.includes('REJECT') || actions.includes('DUPLICATE')) && <details className="advanced-actions">
+      <summary><ChevronDown size={17}/>Assignment and report options</summary>
+      <div className="advanced-actions-body">
+        {actions.includes('ASSIGN') && <label>Assign worker<select value={assignee} onChange={event => setAssignee(event.target.value)}><option value="">Choose approved worker</option>{workers.map(worker => <option key={worker.id} value={worker.id}>{worker.id === profile.id ? `${worker.name} (me)` : worker.name}</option>)}</select></label>}
+        {actions.includes('DUPLICATE') && <label>Link to existing location<select value={duplicate} onChange={event => setDuplicate(event.target.value)}><option value="">Choose an open location</option>{items.filter(candidate => candidate.id !== item.id && !['RESOLVED', 'REJECTED', 'DUPLICATE'].includes(candidate.workStatus)).map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.roadName}</option>)}</select></label>}
+        <div className="advanced-action-buttons">
+          {actions.includes('ASSIGN') && <button type="button" className="secondary-button" disabled={busy || !assignee} onClick={() => update('ASSIGN', { assigneeSub: assignee })}><Users size={16}/>Assign</button>}
+          {actions.includes('DUPLICATE') && <button type="button" className="secondary-button" disabled={busy || !duplicate} onClick={() => update('DUPLICATE', { duplicateOf: duplicate })}>Link report</button>}
+          {actions.includes('REJECT') && <button type="button" className="secondary-button danger-action" disabled={busy} onClick={() => update('REJECT')}>Not actionable</button>}
+        </div>
+      </div>
+    </details>}
+
+    {error && <p role="alert" className="error-message">{error}</p>}
+    <p className="task-safety-note"><ShieldCheck size={15}/>A different approved worker must verify completion before the road is marked clear.</p>
+  </div>
+}
+
 export default function MunicipalWorkspace({ session, profile, navigate, logout }) {
- const city=profile.membership.city
- const [items,setItems]=useState([]),[workers,setWorkers]=useState([]),[selectedId,setSelectedId]=useState(null),[filter,setFilter]=useState('OPEN'),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[actionError,setActionError]=useState(''),[reload,setReload]=useState(0),[evidence,setEvidence]=useState(false)
- useEffect(()=>{const controller=new AbortController();Promise.all([apiRequest(`/municipal/incidents?city=${city}`,{token:session.token,signal:controller.signal}),apiRequest(`/municipal/workers?city=${city}`,{token:session.token,signal:controller.signal})]).then(([reports,people])=>{setItems(reports.incidents);setWorkers(people.workers);setError('')}).catch(e=>{if(!controller.signal.aborted)setError(e.message)}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});return()=>controller.abort()},[city,session.token,reload])
- useEffect(()=>{const timer=setInterval(()=>setReload(v=>v+1),15000);return()=>clearInterval(timer)},[])
- const selected=items.find(i=>i.id===selectedId)
- const queue=items.filter(i=>i.roadName.toLowerCase().includes(query.toLowerCase())&&(filter==='ALL'||filter==='MINE'&&i.workTicket?.assigneeSub===profile.id||filter==='OPEN'&&!['RESOLVED','REJECTED','DUPLICATE'].includes(i.workStatus)||filter==='RESOLUTION_SUBMITTED'&&i.workStatus===filter)).sort((a,b)=>priority(a).rank-priority(b).rank||Date.parse(a.createdAt)-Date.parse(b.createdAt))
- async function action(kind,fields){setBusy(true);setActionError('');try{const data=await apiRequest(`/municipal/incidents/${selected.id}/work`,{token:session.token,body:{city,version:selected.version,action:kind,...fields}});setItems(previous=>previous.map(i=>i.id===data.incident.id?data.incident:i));setReload(v=>v+1)}catch(e){setActionError(e.message);setReload(v=>v+1)}finally{setBusy(false)}}
- const theme=document.documentElement.dataset.theme||'light',googleKey=import.meta.env.VITE_GOOGLE_MAPS_API_KEY||localStorage.getItem('jalmarg_gmaps_api_key')||''
- return <div className="portal municipal-page"><header className="portal-header"><a className="portal-brand" href="#/"><MapPinned size={27}/><strong>JalMarg</strong></a><nav aria-label="Municipal navigation"><button onClick={()=>navigate('map')}><ArrowLeft size={17}/>Journey map</button><button onClick={()=>navigate('account')}>{profile.name}</button><button className="portal-login" onClick={logout}>Sign out</button></nav></header><main className="municipal-main"><div className="municipal-title"><Building2 size={28}/><div><h1>Municipal workspace</h1><p>{profile.membership.corporation} · {CITIES[city]?.name} · {profile.membership.ward}</p></div><button className="icon-button" aria-label="Refresh municipal reports" onClick={()=>{setLoading(true);setReload(v=>v+1)}}><RefreshCw size={20}/></button></div><div className="work-statistics"><div><strong>{items.filter(i=>!['RESOLVED','REJECTED','DUPLICATE'].includes(i.workStatus)).length}</strong><span>Open incidents</span></div><div><strong>{items.filter(i=>i.workTicket?.assigneeSub===profile.id&&!['RESOLVED','REJECTED'].includes(i.workStatus)).length}</strong><span>Assigned to me</span></div><div><strong>{items.filter(i=>i.workStatus==='RESOLUTION_SUBMITTED').length}</strong><span>Awaiting resolution review</span></div><div><strong>{items.filter(i=>i.workStatus==='RESOLVED').length}</strong><span>Resolved</span></div></div>{(actionError||error)&&<p role="alert" className="error-message">{actionError||error}</p>}<div className="municipal-grid"><aside className="incident-queue" aria-label="Municipal incident queue"><div className="queue-controls"><label className="queue-search"><Search size={17}/><input aria-label="Search incident roads" placeholder="Search a road" value={query} onChange={e=>setQuery(e.target.value)}/></label><label>Show<select value={filter} onChange={e=>setFilter(e.target.value)}><option value="OPEN">Open incidents</option><option value="MINE">Assigned to me</option><option value="RESOLUTION_SUBMITTED">Awaiting review</option><option value="ALL">All history</option></select></label></div>{loading?<p role="status">Loading municipal reports…</p>:queue.length?queue.map(item=><button className={`queue-item ${selectedId===item.id?'selected':''}`} key={item.id} onClick={()=>{setSelectedId(item.id);setEvidence(false)}}><span className={`queue-priority priority-${priority(item).rank}`}>{priority(item).label}</span><h2>{item.roadName}</h2><p>{WORK_LABELS[item.workStatus]||'Reported'} · {timeAgo(item.createdAt)}</p><small>{item.workTicket?.assigneeName?`Assigned to ${item.workTicket.assigneeName}`:'Unassigned'}{item.status!=='CLEARED'&&!isActiveIncident(item)?' · Observation needs refreshing':''}</small></button>):<div className="queue-empty"><ClipboardList size={30}/><h2>No incidents in this view</h2><p>Citizen reports for your city appear here. Try another filter.</p></div>}</aside><section className="municipal-detail" aria-label="Incident workspace"><div className="municipal-map"><InteractiveMap selectedCity={city} incidents={items.filter(i=>isActiveIncident(i))} activeRoute={null} origin={null} destination={null} focusPoint={selected} onSelectIncident={i=>setSelectedId(i.id)} googleApiKey={googleKey} theme={theme}/></div>{selected?<div className="task-detail"><div className="task-heading"><div><span className="membership-badge">{WORK_LABELS[selected.workStatus]||'Reported'}</span><h2>{selected.roadName}</h2><p>{selected.waterLevelLabel} · ~{selected.depthCm} cm reported routing depth</p></div><button className="secondary-button" onClick={()=>setEvidence(true)}><ShieldCheck size={17}/>View evidence & history</button></div><p className="help-text">{selected.workStatus==='RESOLVED'?'Completion was independently reviewed. This incident is resolved.':isActiveIncident(selected)?'Observation is recent enough to inform routing.':'The road observation has expired. The municipal task remains open until reviewed.'} Priority uses reported depth; it is not a verified emergency classification.</p><TaskEditor key={`${selected.id}:${selected.version}`} item={selected} items={items} workers={workers} session={session} profile={profile} onAction={action} busy={busy}/></div>:<div className="queue-empty"><MapPinned size={30}/><h2>Select an incident</h2><p>Review its location, evidence and work history before taking action.</p></div>}</section></div></main>{evidence&&selected&&<ReportEvidence incident={selected} session={session} onClose={()=>setEvidence(false)} onChanged={()=>setReload(v=>v+1)} vehicle="BIKE"/>}</div>
+  const city = profile.membership.city
+  const [items, setItems] = useState([])
+  const [workers, setWorkers] = useState([])
+  const [selectedId, setSelectedId] = useState(null)
+  const [filter, setFilter] = useState('OPEN')
+  const [query, setQuery] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [reload, setReload] = useState(0)
+  const [evidence, setEvidence] = useState(false)
+  const [reviewedEvidenceId, setReviewedEvidenceId] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    Promise.all([
+      apiRequest(`/municipal/incidents?city=${city}`, { token: session.token, signal: controller.signal }),
+      apiRequest(`/municipal/workers?city=${city}`, { token: session.token, signal: controller.signal })
+    ]).then(([reports, people]) => {
+      setItems(reports.incidents)
+      setWorkers(people.workers)
+      setSelectedId(current => current && reports.incidents.some(item => item.id === current) ? current : sortQueue(reports.incidents)[0]?.id || null)
+      setError('')
+    }).catch(requestError => {
+      if (!controller.signal.aborted) setError(requestError.message)
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false)
+    })
+    return () => controller.abort()
+  }, [city, session.token, reload])
+
+  useEffect(() => {
+    const timer = setInterval(() => setReload(value => value + 1), 15000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const selected = items.find(item => item.id === selectedId)
+  const searched = items.filter(item => item.roadName.toLowerCase().includes(query.toLowerCase()))
+  const queue = sortQueue(searched.filter(item => matchesFilter(item, filter, profile.id)))
+  const counts = {
+    OPEN: items.filter(item => matchesFilter(item, 'OPEN', profile.id)).length,
+    MINE: items.filter(item => matchesFilter(item, 'MINE', profile.id)).length,
+    RESOLUTION_SUBMITTED: items.filter(item => matchesFilter(item, 'RESOLUTION_SUBMITTED', profile.id)).length,
+    ALL: items.length
+  }
+
+  function chooseFilter(nextFilter) {
+    setFilter(nextFilter)
+    const first = sortQueue(items.filter(item => matchesFilter(item, nextFilter, profile.id)))[0]
+    if (first && !items.some(item => item.id === selectedId && matchesFilter(item, nextFilter, profile.id))) setSelectedId(first.id)
+  }
+
+  function openEvidence() {
+    setReviewedEvidenceId(selected.id)
+    setEvidence(true)
+  }
+
+  async function action(kind, fields) {
+    setBusy(true); setActionError('')
+    try {
+      const data = await apiRequest(`/municipal/incidents/${selected.id}/work`, { token: session.token, body: { city, version: selected.version, action: kind, ...fields } })
+      setItems(previous => previous.map(item => item.id === data.incident.id ? data.incident : item))
+      if (kind === 'APPROVE_RESOLUTION') setFilter('ALL')
+      setReviewedEvidenceId(null)
+      setReload(value => value + 1)
+    } catch (requestError) {
+      setActionError(requestError.message)
+      setReload(value => value + 1)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const theme = document.documentElement.dataset.theme || 'light'
+  const googleKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || localStorage.getItem('jalmarg_gmaps_api_key') || ''
+
+  return <div className="portal municipal-page">
+    <header className="portal-header">
+      <a className="portal-brand" href="#/"><MapPinned size={27}/><strong>JalMarg</strong></a>
+      <nav aria-label="Municipal navigation"><button onClick={() => navigate('map')}><ArrowLeft size={17}/>Journey map</button><button onClick={() => navigate('account')}>{profile.name}</button><button className="portal-login" onClick={logout}>Sign out</button></nav>
+    </header>
+    <main className="municipal-main">
+      <div className="municipal-title">
+        <span className="municipal-title-icon"><Building2 size={25}/></span>
+        <div><h1>Municipal workspace</h1><p>{profile.membership.corporation}</p><small>{CITIES[city]?.name} / {profile.membership.ward}</small></div>
+        <button className="icon-button" aria-label="Refresh affected locations" onClick={() => { setLoading(true); setReload(value => value + 1) }}><RefreshCw size={20}/></button>
+      </div>
+
+      <div className="workspace-filters" aria-label="Workspace views">
+        {FILTERS.map(({ value, label, icon: Icon }) => <button type="button" key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => chooseFilter(value)}><Icon size={19}/><span><strong>{counts[value]}</strong><small>{label}</small></span></button>)}
+      </div>
+
+      {(actionError || error) && <p role="alert" className="error-message workspace-error">{actionError || error}</p>}
+
+      <div className="municipal-grid">
+        <aside className="incident-queue" aria-label="Affected locations">
+          <div className="queue-controls">
+            <div className="queue-heading"><div><h2>Affected locations</h2><p>{queue.length} shown</p></div><MapPin size={20}/></div>
+            <label className="queue-search"><Search size={17}/><span className="sr-only">Search affected locations</span><input aria-label="Search affected locations" placeholder="Search road or landmark" value={query} onChange={event => setQuery(event.target.value)}/></label>
+          </div>
+          <div className="queue-list">
+            {loading ? <div className="queue-loading" role="status"><span/><span/><span/></div> : queue.length ? queue.map(item => <button className={`queue-item ${selectedId === item.id ? 'selected' : ''}`} key={item.id} onClick={() => { setSelectedId(item.id); setEvidence(false); setReviewedEvidenceId(null) }}><span className={`queue-priority priority-${priority(item).rank}`}>{priority(item).label}</span><h3>{item.roadName}</h3><div className="queue-item-meta"><span><Droplets size={14}/>{item.waterLevelLabel}</span><span><Clock3 size={14}/>{timeAgo(item.createdAt)}</span></div><small>{WORK_LABELS[item.workStatus] || 'New report'}{item.workTicket?.assigneeName ? ` / ${item.workTicket.assigneeName}` : ''}</small></button>) : <div className="queue-empty"><ClipboardList size={30}/><h2>No locations here</h2><p>Choose another view or clear the search.</p></div>}
+          </div>
+        </aside>
+
+        <section className="municipal-detail" aria-label="Selected affected location">
+          <div className="municipal-map"><InteractiveMap selectedCity={city} incidents={items.filter(item => isActiveIncident(item))} activeRoute={null} origin={null} destination={null} focusPoint={selected} onSelectIncident={item => { setSelectedId(item.id); setEvidence(false); setReviewedEvidenceId(null) }} googleApiKey={googleKey} theme={theme}/></div>
+          {selected ? <div className="task-detail">
+            <div className="task-heading">
+              <div><span className="current-status">{WORK_LABELS[selected.workStatus] || 'New report'}</span><h2>{selected.roadName}</h2><p><Droplets size={16}/>{selected.waterLevelLabel}, about {selected.depthCm} cm reported</p></div>
+              <button className="evidence-button" onClick={openEvidence}><ShieldCheck size={18}/><span>View photos and history</span></button>
+            </div>
+            <div className="location-context"><MapPin size={17}/><p>{selected.workStatus === 'RESOLVED' ? 'Completion was independently reviewed. This location is marked complete.' : isActiveIncident(selected) ? 'This citizen observation is current and can inform routing.' : 'The observation is old, but the municipal task stays open until it is reviewed.'}</p></div>
+            <TaskEditor key={`${selected.id}:${selected.version}`} item={selected} items={items} workers={workers} session={session} profile={profile} onAction={action} onEvidence={openEvidence} evidenceReviewed={reviewedEvidenceId === selected.id} busy={busy}/>
+          </div> : <div className="queue-empty detail-empty"><MapPinned size={30}/><h2>Select an affected location</h2><p>Choose a road from the list or select a water marker on the map.</p></div>}
+        </section>
+      </div>
+    </main>
+    {evidence && selected && <ReportEvidence incident={selected} session={session} onClose={() => setEvidence(false)} onChanged={() => setReload(value => value + 1)} vehicle="BIKE"/>}
+  </div>
 }

@@ -419,7 +419,7 @@ authoritative status of the improvement work.
   Additional screenshots: docs/jalmarg-city-desktop.jpg and
   docs/jalmarg-vehicle-assessment.jpg. API restarted with final validation.
 
-## 11. Citizen and municipal identities (implementation underway)
+## 11. Citizen and municipal identities
 ### Phase 1: plan, audit, validation
 - Audited current API, SQLite/DynamoDB repository, operator-only Cognito stack,
   PKCE client, public report writes and four-hour routing freshness.
@@ -519,3 +519,70 @@ authoritative status of the improvement work.
   traffic/two-wheeler ETA. Municipal permission scope is city, ward is descriptive.
 - README/DEPLOYMENT include live configuration, trusted membership administration,
   local dependency setup and verification limits. No GitHub publish in this phase.
+
+## 12. Municipal field workspace simplification (11 October 2026)
+
+### 12.1 Plan and build
+- Reframed the municipal screen around the field worker's task: find an affected
+  location, inspect the map and evidence, then record the current field status.
+- Replaced the large summary strip with four compact work views: Needs action,
+  My locations, Verify completion and History. The searchable affected-location
+  queue now shows priority, reported water level, age and current work state.
+- Added three plain-language status choices: Still flooded, Work ongoing and
+  Completed. A worker can take an unassigned location and begin work in one
+  `TAKE_AND_START` update; the API assigns the worker and records the start in one
+  conditional write. A worker cannot take a location assigned to someone else.
+- Completion opens a focused after-photo and completion-note step. The photo,
+  actor and timeline remain visible through View photos and history. Completion
+  still requires a different approved worker, preserving the existing safeguard.
+- Moved reassignment, duplicate linking and rejection into a secondary disclosure
+  so routine field work stays clear. Updated municipal status labels throughout
+  citizen report history and the workspace.
+
+### 12.2 Test and deployment
+- 49 Python tests and 32 frontend tests pass. Production build and `git diff
+  --check` pass; oxlint has no errors and only pre-existing legacy warnings.
+- SAM native Python 3.14 build, SAM lint and AWS CloudFormation template validation
+  passed. `jalmarg-api` deployed with no resource replacement and reached
+  `UPDATE_COMPLETE`; the CloudFront frontend was published and invalidated.
+- Isolated live AWS smoke test passed Cognito authorization, city boundaries,
+  private S3 evidence, DynamoDB and Step Functions, one-step take/start, owned
+  after-photo, independent resolution verification and citizen reopening. All
+  synthetic accounts, records and object versions were removed afterward.
+- Chrome verified the deployed municipal account with the real Gwalior queue,
+  map selection, simple status controls, completion evidence photo and audit
+  history. Existing user-created reports were inspected read-only and preserved.
+- Visual proof: `docs/jalmarg-municipal-simple-desktop.png`,
+  `docs/jalmarg-municipal-simple-actions.png` and
+  `docs/jalmarg-municipal-evidence-simple.png`.
+- CloudFormation Guard is not installed, so a separate cfn-guard compliance pass
+  was unavailable. Local SAM lint and AWS account-aware validation both passed.
+
+## 13. Direct flood detours and Google Maps handoff (11 October 2026)
+
+### 13.1 Plan and build
+- Replaced the single city-scale perpendicular avoidance waypoint with two local
+  corridor anchors before and after the reported flooded segment. Both sides and
+  two offsets are evaluated against the same vehicle depth rule.
+- Added route-quality checks that reject excessive distance and backtracking, so a
+  failed bypass now returns no alternative instead of displaying a misleading loop.
+- Removed rejected route candidates from the map. The chosen road is one continuous
+  blue line; only a short padded section of the blocked road appears in red.
+- Added a persistent Open safe route in Google Maps action. Flood detours include
+  three ordered points sampled from the checked JalMarg corridor plus `dir_action`
+  for the Google Maps navigation handoff. The UI states that Google can recalculate.
+
+### 13.2 Test and deployment
+- Added geometry tests for local detour anchors, backtracking rejection, blocked
+  segment presentation and Google Maps URL/corridor generation. All 37 frontend
+  tests, the production build and `git diff --check` pass; oxlint has only existing
+  legacy warnings. All 49 backend tests pass with one existing skip.
+- A live OSRM check for IIITM Campus to Gwalior Railway Station reduced the flooded
+  test route from the previous 8.1 km loop to a continuous 6.75 km / 13 minute
+  bypass around the 5.05 km blocked baseline.
+- Desktop and 390x844 Chrome checks confirmed the continuous route, localized red
+  hazard segment, sticky navigation action and responsive layout. The action opened
+  Google Maps with the correct origin, destination and three ordered corridor stops.
+- Published the frontend to the existing private S3/CloudFront hosting without
+  deleting bucket objects; invalidation `IC5J1WDBCPM9HLXQYB1LBP6YKN` completed.
+  The deployed test lab passed at https://d2vv0vxqbvoy73.cloudfront.net/.

@@ -40,6 +40,17 @@ class MunicipalTests(unittest.TestCase):
         self.work('ASSIGN',assigneeSub='worker')
         self.assertEqual(self.work('START',user='reviewer')[0],403)
         self.assertEqual(self.work('START')[0],200)
+    def test_worker_can_take_a_new_location_and_start_in_one_update(self):
+        code,data=self.work('TAKE_AND_START')
+        self.assertEqual(code,200)
+        incident=data['incident']
+        self.assertEqual(incident['workStatus'],'IN_PROGRESS')
+        self.assertEqual(incident['workTicket']['assigneeSub'],'worker')
+        self.assertIn('startedAt',incident['workTicket'])
+        self.assertEqual(incident['timeline'][-1]['kind'],'TAKE_AND_START')
+    def test_worker_cannot_take_another_workers_assignment(self):
+        self.work('REVIEW');self.work('ASSIGN',assigneeSub='reviewer')
+        self.assertEqual(self.work('TAKE_AND_START')[0],403)
     def test_work_survives_expired_observation_and_stale_writes_fail(self):
         item=self.repo.get('GWL',self.item['id']);self.repo.put({**item,'expiresAt':'2000-01-01T00:00:00+00:00','version':item['version']+1},item['version'])
         self.assertEqual(self.request('/incidents')[1]['incidents'],[])

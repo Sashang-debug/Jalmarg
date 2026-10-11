@@ -30,9 +30,78 @@ export function auditPath(path, incidents, vehicle, now = Date.now()) {
 export function chooseRoute(candidates, incidents, vehicle, now = Date.now()) {
   const audited = candidates.filter(route => Array.isArray(route.path) && route.path.length > 1)
     .map(route => ({ ...route, ...auditPath(route.path, incidents, vehicle, now) }))
-  audited.sort((a, b) => a.blocking.length - b.blocking.length || a.durationMins - b.durationMins || a.hazards.length - b.hazards.length)
+  audited.sort((a, b) => a.blocking.length - b.blocking.length || a.durationMins - b.durationMins || a.distanceKm - b.distanceKm || a.hazards.length - b.hazards.length)
   const selected = audited.find(route => route.blocking.length === 0) || null
   return { status: selected ? 'AVAILABLE' : audited.length ? 'NO_ALTERNATIVE' : 'UNAVAILABLE', selected, candidates: audited }
+}
+
+function pointDistanceMeters(a, b) {
+  const lat = ((a[0] + b[0]) / 2) * Math.PI / 180
+  return Math.hypot((b[1] - a[1]) * 111320 * Math.cos(lat), (b[0] - a[0]) * 111320)
+}
+
+function walkPath(path, start, direction, distanceMeters) {
+  let travelled = 0
+  let index = start
+  while (index + direction >= 0 && index + direction < path.length) {
+    const next = index + direction
+    travelled += pointDistanceMeters(path[index], path[next])
+    index = next
+    if (travelled >= distanceMeters) break
+  }
+  return path[index]
+}
+
+export function localDetourWaypoints(path, hazard, direction, offsetMeters = 280) {
+  if (!Array.isArray(path) || path.length < 2) return []
+  let closest = 0
+  let closestDistance = Infinity
+  for (let index = 1; index < path.length; index += 1) {
+    const distance = distanceToSegmentMeters(hazard, path[index - 1], path[index])
+    if (distance < closestDistance) { closestDistance = distance; closest = index }
+  }
+  const before = walkPath(path, Math.max(0, closest - 1), -1, 320)
+  const after = walkPath(path, closest, 1, 320)
+  const middleLat = (before[0] + after[0]) / 2
+  const lngScale = 111320 * Math.cos(middleLat * Math.PI / 180)
+  const dx = (after[1] - before[1]) * lngScale
+  const dy = (after[0] - before[0]) * 111320
+  const length = Math.hypot(dx, dy)
+  if (length < 20 || !Number.isFinite(length)) return []
+  const offsetX = direction * (-dy / length) * offsetMeters
+  const offsetY = direction * (dx / length) * offsetMeters
+  return [before, after].map(([lat, lng]) => ({
+    lat: lat + offsetY / 111320,
+    lng: lng + offsetX / (111320 * Math.cos(lat * Math.PI / 180)),
+  }))
+}
+
+export function routeBacktrackMeters(path) {
+  if (!Array.isArray(path) || path.length < 2) return 0
+  const origin = path[0], destination = path.at(-1)
+  const middleLat = (origin[0] + destination[0]) / 2
+  const lngScale = 111320 * Math.cos(middleLat * Math.PI / 180)
+  const axisX = (destination[1] - origin[1]) * lngScale
+  const axisY = (destination[0] - origin[0]) * 111320
+  const length = Math.hypot(axisX, axisY)
+  if (length < 1) return Infinity
+  let previous = 0, backtrack = 0
+  for (const [lat, lng] of path.slice(1)) {
+    const x = (lng - origin[1]) * lngScale
+    const y = (lat - origin[0]) * 111320
+    const progress = (x * axisX + y * axisY) / length
+    if (progress < previous) backtrack += previous - progress
+    previous = progress
+  }
+  return backtrack
+}
+
+export function isReasonablyDirect(route, baseline) {
+  if (!route?.path?.length || !baseline?.path?.length) return false
+  const straightMeters = pointDistanceMeters(route.path[0], route.path.at(-1))
+  const maxDistanceKm = Math.max(baseline.distanceKm * 1.8, baseline.distanceKm + 3)
+  const maxBacktrack = Math.max(350, straightMeters * 0.3)
+  return route.distanceKm <= maxDistanceKm && routeBacktrackMeters(route.path) <= maxBacktrack
 }
 
 export async function streetRoutes(points, signal) {
@@ -57,12 +126,17 @@ export async function resolveFloodRoutes(origin, destination, incidents, vehicle
   let result = chooseRoute(candidates, incidents, vehicle)
   if (result.status === 'NO_ALTERNATIVE') {
     const hazard = result.candidates[0].blocking[0]
-    const dx = destination.lng - origin.lng, dy = destination.lat - origin.lat
-    const length = Math.hypot(dx, dy) || 1
-    const alternatives = await Promise.allSettled([1, -1].map(direction => provider([origin,
-      { lat: hazard.lat - direction * dx / length * 0.015, lng: hazard.lng + direction * dy / length * 0.015 }, destination], signal)))
+    const baseline = result.candidates[0]
+    const requests = [220, 360].flatMap(offset => [1, -1].map(direction => {
+      const waypoints = localDetourWaypoints(baseline.path, hazard, direction, offset)
+      return waypoints.length ? provider([origin, ...waypoints, destination], signal)
+        .then(routes => routes.map(route => ({ ...route, generatedDetour: true, detourOffsetMeters: offset }))) : Promise.resolve([])
+    }))
+    const alternatives = await Promise.allSettled(requests)
     if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError')
-    result = chooseRoute([...candidates, ...alternatives.flatMap(r => r.status === 'fulfilled' ? r.value : [])], incidents, vehicle)
+    const directAlternatives = alternatives.flatMap(r => r.status === 'fulfilled' ? r.value : [])
+      .filter(route => isReasonablyDirect(route, baseline))
+    result = chooseRoute([...candidates, ...directAlternatives], incidents, vehicle)
   }
   return result
 }

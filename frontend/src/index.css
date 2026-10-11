@@ -50,22 +50,36 @@
   -webkit-font-smoothing: antialiased;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
   line-height: 1.5;
-  overflow: hidden;
-  height: 100vh;
+  overflow-x: hidden;
+  min-height: 100vh;
   width: 100vw;
 }
 
 #root {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 100vh;
   width: 100vw;
   position: relative;
+}
+
+body:has(.maps-app), body:has(.jalmarg-app) {
+  overflow: hidden;
+  height: 100vh;
+}
+
+#root:has(.maps-app), #root:has(.jalmarg-app) {
+  height: 100vh;
+  overflow: hidden;
 }
 
 h1, h2, h3, h4 {

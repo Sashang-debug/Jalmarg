@@ -3,6 +3,7 @@ import { CITIES } from '../utils/cities'
 import { googleLibrary } from '../utils/places'
 import { markerContent } from './MapMarkers'
 import { GOOGLE_MAPS_DARK_STYLE } from '../utils/googleMapsStyles'
+import { blockedRouteSegment } from '../utils/routePresentation'
 
 
 export default function GoogleMapEngine({ apiKey, selectedCity, incidents = [], activeRoute, origin, destination, userLocation, pickingMode, onMapClick, onSelectIncident, theme = 'light', layers = {}, focusPoint, panelOpen = true }) {
@@ -91,9 +92,10 @@ export default function GoogleMapEngine({ apiKey, selectedCity, incidents = [], 
     if (!points?.length) return
     const google = window.google
     const selected = Boolean(activeRoute.selected)
-    const alternatives = (activeRoute.candidates || []).filter(candidate => candidate !== activeRoute.selected)
-    const lines = alternatives.map(candidate => new google.maps.Polyline({ path: candidate.path.map(([lat, lng]) => ({ lat, lng })),
-      strokeColor: candidate.blocking?.length ? '#d93025' : '#9aa0a6', strokeOpacity: 0.55, strokeWeight: 4, zIndex: 1 }))
+    const blockedPath = activeRoute.fastest !== activeRoute.selected ? blockedRouteSegment(activeRoute.fastest) : []
+    const lines = blockedPath.length ? [new google.maps.Polyline({ path: blockedPath.map(([lat, lng]) => ({ lat, lng })),
+      strokeColor: '#d93025', strokeOpacity: 0.8, strokeWeight: 4, zIndex: 1,
+      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 }, offset: '0', repeat: '14px' }] })] : []
     lines.push(new google.maps.Polyline({ path: points.map(([lat, lng]) => ({ lat, lng })),
       strokeColor: selected ? '#1a73e8' : '#d93025', strokeOpacity: selected ? 1 : 0.65, strokeWeight: selected ? 6 : 4, zIndex: 2 }))
     lines.forEach(line => line.setMap(map.current))

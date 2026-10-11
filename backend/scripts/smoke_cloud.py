@@ -121,8 +121,8 @@ class Smoke:
         print('PASS API authorizer, city boundaries, private ownership, S3 signed access, DynamoDB and Step Functions')
         self.table.update_item(Key={'PK':'CITY#GWL','SK':f'INCIDENT#{incident}'},UpdateExpression='SET expiresAt=:old',ExpressionAttributeValues={':old':'2000-01-01T00:00:00+00:00'})
         assert not any(i['id']==incident for i in self.request('/incidents?city=GWL')['incidents'])
-        self.work(incident,'REVIEW');self.work(incident,'ASSIGN',assigneeSub=self.state['users']['worker']['sub'])
-        self.work(incident,'START',user='reviewer',expected=403);self.work(incident,'START')
+        item=self.work(incident,'TAKE_AND_START')
+        assert item['workStatus']=='IN_PROGRESS' and item['workTicket']['assigneeSub']==self.state['users']['worker']['sub']
         self.work(incident,'SUBMIT_RESOLUTION',evidenceKey=key,expected=400)
         item=self.work(incident,'SUBMIT_RESOLUTION',evidenceKey=self.photo('worker'))
         assert item['status']!='CLEARED'
@@ -130,7 +130,7 @@ class Smoke:
         item=self.work(incident,'APPROVE_RESOLUTION',user='reviewer');assert item['workStatus']=='RESOLVED' and item['status']=='CLEARED'
         item=self.request(f'/incidents/{incident}/observations',{'city':'GWL','action':'STILL_FLOODED'},user='citizen')['incident'];assert item['workStatus']=='REOPENED' and item['status']=='NEEDS_REVIEW'
         self.state['browserIncident']=incident;self.save()
-        print('PASS work survives expiry, assignee enforcement, fresh owned after-photo, independent resolution review, citizen reopening')
+        print('PASS one-step take/start, work survives expiry, assignee enforcement, fresh owned after-photo, independent resolution review, citizen reopening')
     def cleanup(self):
         # Include photos uploaded through the browser by these disposable accounts.
         from boto3.dynamodb.conditions import Attr

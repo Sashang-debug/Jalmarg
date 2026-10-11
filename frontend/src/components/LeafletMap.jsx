@@ -3,6 +3,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { CITIES } from '../utils/cities'
 import { markerContent } from './MapMarkers'
+import { blockedRouteSegment } from '../utils/routePresentation'
 
 export default function LeafletMap({ selectedCity, incidents, activeRoute, origin, destination, userLocation, pickingMode, onMapClick, onSelectIncident, theme = 'light', focusPoint, panelOpen = true }) {
   const container = useRef(null)
@@ -44,9 +45,8 @@ export default function LeafletMap({ selectedCity, incidents, activeRoute, origi
     const group = layers.current
     group.clearLayers()
     const route = activeRoute?.selected
-    for (const candidate of activeRoute?.candidates || []) {
-      if (candidate !== route) L.polyline(candidate.path, { color: candidate.blocking?.length ? '#d93025' : '#9aa0a6', weight: 4, opacity: 0.55 }).addTo(group)
-    }
+    const blockedPath = activeRoute?.fastest !== route ? blockedRouteSegment(activeRoute?.fastest) : []
+    if (blockedPath.length) L.polyline(blockedPath, { color: '#d93025', weight: 4, opacity: 0.8, dashArray: '7 8' }).addTo(group)
     if (route) L.polyline(route.path, { color: '#1a73e8', weight: 6, opacity: 0.9 }).addTo(group)
     else if (activeRoute?.candidates?.[0]) L.polyline(activeRoute.candidates[0].path, { color: '#ea897b', weight: 4, dashArray: '7 8' }).addTo(group)
     for (const [point, kind] of [[origin, 'source'], [destination, 'destination']]) {

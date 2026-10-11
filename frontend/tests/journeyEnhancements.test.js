@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createGoogleStreetProvider } from '../src/utils/journeyRouting.js'
 import { routeAdvisory } from '../src/utils/routeAdvisory.js'
 import { assessVehicle, photoDepth } from '../src/utils/vehicleAssessment.js'
+import { buildGoogleMapsNavigationUrl, routeCorridorWaypoints } from '../src/utils/googleNavigation.js'
 const now = Date.now()
 const report = {roadName:'Station road',depthCm:50,status:'NEEDS_REVIEW',expiresAt:new Date(now+3600000).toISOString()}
 const origin={lat:26.24,lng:78.17,name:'Campus'}, destination={lat:26.22,lng:78.18,name:'Station'}
@@ -58,6 +59,24 @@ test('photo depth uses confirmed image geometry rather than captions or fixed du
   assert.equal(photoDepth(reference),30)
   assert.equal(photoDepth({...reference,waterY:.4}),40)
   for(const bad of [{confirmed:false},{baseY:.21},{waterY:.9},{waterY:.1},{referenceHeightCm:NaN},{topY:-1}]) assert.equal(photoDepth({...reference,...bad}),null)
+})
+
+test('Google Maps navigation carries ordered JalMarg corridor stops for a flood detour',()=>{
+  const path=[[26.24,78.17],[26.238,78.174],[26.233,78.178],[26.227,78.181],[26.22,78.18]]
+  const fastest={path:[[26.24,78.17],[26.22,78.18]],blocking:[report]}
+  const route={selected:{path},fastest}
+  const url=new URL(buildGoogleMapsNavigationUrl({origin,destination,route,vehicle:'BIKE'}))
+  assert.equal(url.hostname,'www.google.com')
+  assert.equal(url.searchParams.get('dir_action'),'navigate')
+  assert.equal(url.searchParams.get('travelmode'),'driving')
+  assert.equal(url.searchParams.get('waypoints').split('|').length,routeCorridorWaypoints(path).length)
+  assert.match(url.searchParams.get('utm_content'),/2wheeler/)
+})
+test('Google Maps navigation does not invent waypoints for an unaffected route',()=>{
+  const path=[[26.24,78.17],[26.23,78.175],[26.22,78.18]]
+  const url=new URL(buildGoogleMapsNavigationUrl({origin,destination,route:{selected:{path},fastest:{path,blocking:[]}},vehicle:'SEDAN'}))
+  assert.equal(url.searchParams.has('waypoints'),false)
+  assert.equal(buildGoogleMapsNavigationUrl({origin:null,destination,route:{selected:{path}}}),'')
 })
 
  test('a stalled Google request times out and an in-flight request can be cancelled', async () => {

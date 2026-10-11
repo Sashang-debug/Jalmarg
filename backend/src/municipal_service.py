@@ -19,7 +19,15 @@ def mutate_work(item, body, identity, repository, now=None):
     note = text(body.get('note'), 'Work note', 300)
     ticket = dict(item.get('workTicket') or {})
     updated = dict(item)
-    if action == 'REVIEW' and state in {'REPORTED','REOPENED'}:
+    if action == 'TAKE_AND_START' and (state in {'REPORTED','REOPENED','UNDER_REVIEW'} or
+                                       state == 'ASSIGNED' and ticket.get('assigneeSub') == identity['id']):
+        ticket.update(id=ticket.get('id', f"JM-{item['id'][:8].upper()}"),
+                      assigneeSub=identity['id'],assigneeName=identity['name'],
+                      assignedAt=ticket.get('assignedAt', iso(now)),startedAt=iso(now))
+        state = 'IN_PROGRESS'
+    elif action == 'TAKE_AND_START' and state == 'ASSIGNED':
+        raise ApiError(403, 'This location is assigned to another worker.')
+    elif action == 'REVIEW' and state in {'REPORTED','REOPENED'}:
         state = 'UNDER_REVIEW'
     elif action == 'ASSIGN' and state in {'UNDER_REVIEW','ASSIGNED'}:
         worker = repository.get_profile(body.get('assigneeSub'))

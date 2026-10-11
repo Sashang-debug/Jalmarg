@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { auditPath, chooseRoute, distanceToSegmentMeters, resolveFloodRoutes } from '../src/utils/floodRouting.js'
+import { auditPath, chooseRoute, distanceToSegmentMeters, isReasonablyDirect, localDetourWaypoints, resolveFloodRoutes, routeBacktrackMeters } from '../src/utils/floodRouting.js'
+import { blockedRouteSegment } from '../src/utils/routePresentation.js'
 
 const now = Date.now()
 const incident = (overrides = {}) => ({ id: 'one', lat: 12.93, lng: 77.62, depthCm: 30, status: 'NEEDS_REVIEW', expiresAt: new Date(now + 3600000).toISOString(), ...overrides })
@@ -48,6 +49,30 @@ test('empty geometry does not turn into an invented route', () => {
 test('segment distance handles repeated points', () => {
   assert.ok(distanceToSegmentMeters({ lat: 0, lng: 0 }, [0, 0], [0, 0]) === 0)
 })
+test('local detour anchors stay around the flooded segment instead of creating a city-wide waypoint', () => {
+  const path = [[26.24, 78.17], [26.235, 78.17], [26.23, 78.17], [26.225, 78.17], [26.22, 78.17]]
+  const points = localDetourWaypoints(path, { lat: 26.23, lng: 78.17 }, 1, 280)
+  assert.equal(points.length, 2)
+  assert.ok(points.every(point => point.lng > 78.171 && point.lng < 78.174))
+  assert.ok(points[0].lat > 26.23 && points[1].lat < 26.23)
+})
+test('looping generated routes are rejected while a direct local bypass is accepted', () => {
+  const baseline = route([[26.24, 78.17], [26.22, 78.18]], 10)
+  baseline.distanceKm = 3
+  const local = route([[26.24, 78.17], [26.232, 78.174], [26.22, 78.18]], 12)
+  local.distanceKm = 3.6
+  const loop = route([[26.24, 78.17], [26.20, 78.15], [26.25, 78.20], [26.22, 78.18]], 15)
+  loop.distanceKm = 9
+  assert.equal(routeBacktrackMeters(local.path) < routeBacktrackMeters(loop.path), true)
+  assert.equal(isReasonablyDirect(local, baseline), true)
+  assert.equal(isReasonablyDirect(loop, baseline), false)
+})
+test('map presentation shows only the local blocked corridor', () => {
+  const path = [[12.90, 77.62], [12.91, 77.62], [12.92, 77.62], [12.93, 77.62], [12.94, 77.62], [12.95, 77.62]]
+  const blocked = blockedRouteSegment({ path, blocking: [incident({ lat: 12.93, lng: 77.62 })] }, 150)
+  assert.ok(blocked.length >= 2)
+  assert.ok(blocked.length < path.length)
+})
 test('routing failure propagates instead of substituting a straight line', async () => {
   const original = globalThis.fetch
   globalThis.fetch = async () => { throw new Error('offline') }
@@ -66,6 +91,6 @@ test('failed detour requests cannot reuse the blocked direct route as selected',
     const result = await resolveFloodRoutes({ lat: 12.92, lng: 77.62 }, { lat: 12.94, lng: 77.62 }, [incident()], 'BIKE')
     assert.equal(result.status, 'NO_ALTERNATIVE')
     assert.equal(result.selected, null)
-    assert.equal(calls, 3)
+    assert.equal(calls, 5)
   } finally { globalThis.fetch = original }
 })
