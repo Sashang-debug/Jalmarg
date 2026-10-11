@@ -126,8 +126,7 @@ export default function App({ session, profile, navigate }) {
           result = testScenario === 'clear' || testScenario === 'cleared' ? baseline : await resolveJourney(origin, destination, dummy, vehicle, controller.signal, googleKey)
         } else result = await resolveJourney(origin, destination, currentReports, vehicle, controller.signal, googleKey)
         if (!controller.signal.aborted) {
-          const fastest = [...result.candidates].sort((a, b) => a.durationMins - b.durationMins)[0]
-          setRoute({ ...result, fastest })
+          setRoute(result)
         }
       } catch (err) {
         if (!controller.signal.aborted) setRoute({ status: 'UNAVAILABLE', candidates: [], selected: null, error: err.message })
@@ -191,8 +190,6 @@ export default function App({ session, profile, navigate }) {
     setIncidents(previous => [item, ...previous.filter(i => i.id !== item.id)])
   }
   const selectedIncident = visibleIncidents.find(i => i.id === selectedId)
-  const mapRoute = useMemo(() => ({ ...route, directPath: route.selected?.path || route.candidates?.[0]?.path || [],
-    detourPath: route.selected?.path || [], isDetourRequired: false, avoidedHazardPath: [] }), [route])
 
   return <main className={`jalmarg-app maps-app ${panelOpen ? 'panel-open' : 'panel-closed'}`}>
     <nav className="map-rail" aria-label="Main navigation"><a className="maps-brand" href="#/" aria-label="JalMarg home"><MapPinned size={29} /><strong>JalMarg</strong></a>
@@ -204,7 +201,7 @@ export default function App({ session, profile, navigate }) {
         <button aria-label="Map and connection settings" onClick={() => { setKeyDraft(googleKey); setModal('settings') }}><Settings2 size={22} /><span>Settings</span></button></div>
     </nav>
     <div className="workspace">
-      <section className="map-workspace" aria-label="Journey map"><InteractiveMap selectedCity={city} incidents={showReports ? activeIncidents : []} activeRoute={mapRoute}
+      <section className="map-workspace" aria-label="Journey map"><InteractiveMap selectedCity={city} incidents={showReports ? activeIncidents : []} activeRoute={route}
         origin={origin} destination={destination} vehicle={vehicle} userLocation={userLocation} pickingMode={pickingMode} onMapClick={handleMapClick}
         onSelectIncident={viewIncident} googleApiKey={googleKey} theme={effectiveTheme} layers={layers} panelOpen={panelOpen} />
         <div className="map-topbar"><button className="mobile-menu icon-button" aria-label="Open main menu" onClick={() => setMenuOpen(true)}><Menu size={23} /></button>

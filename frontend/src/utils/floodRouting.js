@@ -27,12 +27,18 @@ export function auditPath(path, incidents, vehicle, now = Date.now()) {
   return { hazards, blocking }
 }
 
+export function compareRouteTime(a, b) {
+  return (a.durationSeconds ?? a.durationMins * 60) - (b.durationSeconds ?? b.durationMins * 60) || a.distanceKm - b.distanceKm
+}
+
 export function chooseRoute(candidates, incidents, vehicle, now = Date.now()) {
   const audited = candidates.filter(route => Array.isArray(route.path) && route.path.length > 1)
     .map(route => ({ ...route, ...auditPath(route.path, incidents, vehicle, now) }))
-  audited.sort((a, b) => a.blocking.length - b.blocking.length || a.durationMins - b.durationMins || a.distanceKm - b.distanceKm || a.hazards.length - b.hazards.length)
+  // Preserve the unconstrained fastest candidate before avoidance changes the order.
+  const fastest = [...audited].sort(compareRouteTime)[0] || null
+  audited.sort((a, b) => a.blocking.length - b.blocking.length || compareRouteTime(a, b) || a.hazards.length - b.hazards.length)
   const selected = audited.find(route => route.blocking.length === 0) || null
-  return { status: selected ? 'AVAILABLE' : audited.length ? 'NO_ALTERNATIVE' : 'UNAVAILABLE', selected, candidates: audited }
+  return { status: selected ? 'AVAILABLE' : audited.length ? 'NO_ALTERNATIVE' : 'UNAVAILABLE', selected, fastest, candidates: audited }
 }
 
 function pointDistanceMeters(a, b) {
@@ -115,7 +121,7 @@ export async function streetRoutes(points, signal) {
   const data = await response.json()
   if (data.code !== 'Ok' || !data.routes?.length) throw new Error('No street route was found between these locations.')
   const routes = data.routes.map(route => ({ path: route.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
-    distanceKm: route.distance / 1000, durationMins: Math.max(1, Math.round(route.duration / 60)) }))
+    distanceKm: route.distance / 1000, durationSeconds: route.duration, durationMins: Math.max(1, Math.round(route.duration / 60)) }))
   if (cache.size >= 100) cache.delete(cache.keys().next().value)
   cache.set(key, { at: Date.now(), routes })
   return routes

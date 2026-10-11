@@ -94,3 +94,18 @@ test('failed detour requests cannot reuse the blocked direct route as selected',
     assert.equal(calls, 5)
   } finally { globalThis.fetch = original }
 })
+
+test('equal rounded ETAs retain avoided original independently of flood ordering', () => {
+  const direct = { ...route([[12.92, 77.62], [12.94, 77.62]], 7), distanceKm: 4.6, durationSeconds: 401 }
+  const bypass = { ...route([[12.92, 77.62], [12.93, 77.65], [12.94, 77.62]], 7), distanceKm: 6.1, durationSeconds: 419 }
+  const result = chooseRoute([bypass, direct], [incident()], 'BIKE', now)
+  assert.equal(result.fastest.path, direct.path)
+  assert.equal(result.selected.path, bypass.path)
+  assert.equal(result.fastest.blocking.length, 1)
+  assert.ok(blockedRouteSegment(result.fastest).length)
+  assert.notEqual(result.fastest, result.selected)
+  const restored = chooseRoute([direct, bypass], [incident({ status: 'CLEARED' })], 'BIKE', now)
+  assert.equal(restored.fastest, restored.selected)
+  delete direct.durationSeconds; delete bypass.durationSeconds
+  assert.equal(chooseRoute([bypass, direct], [incident()], 'BIKE', now).fastest.path, direct.path)
+})

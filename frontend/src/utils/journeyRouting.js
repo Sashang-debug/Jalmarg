@@ -36,7 +36,7 @@ export function createGoogleStreetProvider(computeRoutes, vehicle, timeoutMs = 1
     if (fallbackInfo) throw new Error('Google could not supply the requested traffic-aware routing.')
     const normalized = routes.map(route => ({
       path: (route.path || []).map(point => [typeof point.lat === 'function' ? point.lat() : point.lat, typeof point.lng === 'function' ? point.lng() : point.lng]),
-      durationMins: Math.max(1, Math.ceil(route.durationMillis / 60000)), distanceKm: route.distanceMeters / 1000,
+      durationSeconds: route.durationMillis / 1000, durationMins: Math.max(1, Math.ceil(route.durationMillis / 60000)), distanceKm: route.distanceMeters / 1000,
       description: route.description || '', timingProvider: 'GOOGLE', travelMode: vehicle === 'BIKE' ? 'TWO_WHEELER' : 'DRIVING',
     })).filter(route => route.path.length > 1 && route.path.every(point => point.every(Number.isFinite)) && Number.isFinite(route.durationMins) && Number.isFinite(route.distanceKm))
     if (!normalized.length) throw new Error('Google returned no usable street route.')

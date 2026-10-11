@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CITIES } from '../utils/cities'
 import { googleLibrary } from '../utils/places'
-import { markerContent } from './MapMarkers'
+import { markerAnchor, markerContent } from './MapMarkers'
 import { GOOGLE_MAPS_DARK_STYLE } from '../utils/googleMapsStyles'
 import { blockedRouteSegment } from '../utils/routePresentation'
 
@@ -58,25 +58,26 @@ export default function GoogleMapEngine({ apiKey, selectedCity, incidents = [], 
     const google = window.google
     const overlays = []
     class TextOverlay extends google.maps.OverlayView {
-      constructor(point, content, onClick) {
-        super(); this.point = point; this.content = content; this.onClick = onClick
+      constructor(point, content, onClick, kind) {
+        super(); this.point = point; this.content = content; this.onClick = onClick; this.kind = kind
       }
       onAdd() {
         const element = this.content
         element.style.position = 'absolute'
+        element.style.zIndex = this.kind === 'source' || this.kind === 'destination' ? '30' : '20'
         if (this.onClick) element.addEventListener('click', event => { event.stopPropagation(); this.onClick() })
         this.element = element; this.getPanes().overlayMouseTarget.appendChild(element)
       }
       draw() {
         const point = this.getProjection()?.fromLatLngToDivPixel(new google.maps.LatLng(this.point.lat, this.point.lng))
         if (!point || !this.element) return
-        this.element.style.left = `${point.x}px`; this.element.style.top = `${point.y}px`; this.element.style.transform = 'translate(-23px,-48px)'
+        this.element.style.left = `${point.x}px`; this.element.style.top = `${point.y}px`; const [x, y] = markerAnchor(this.kind); this.element.style.transform = `translate(${-x}px,${-y}px)`
       }
       onRemove() { this.element?.remove() }
     }
     function add(point, kind, onClick, label) {
       const content = markerContent({ kind, name: point.name || point.roadName, level: point.waterLevelLabel, critical: point.depthCm >= 35, label })
-      const overlay = new TextOverlay(point, content, onClick)
+      const overlay = new TextOverlay(point, content, onClick, kind)
       overlay.setMap(map.current); overlays.push(overlay)
     }
     if (origin) add(origin, 'source')
@@ -93,18 +94,28 @@ export default function GoogleMapEngine({ apiKey, selectedCity, incidents = [], 
     const google = window.google
     const selected = Boolean(activeRoute.selected)
     const blockedPath = activeRoute.fastest !== activeRoute.selected ? blockedRouteSegment(activeRoute.fastest) : []
+    const avoidedPath = activeRoute.fastest?.blocking?.length && activeRoute.selected ? activeRoute.fastest.path : []
     const lines = blockedPath.length ? [new google.maps.Polyline({ path: blockedPath.map(([lat, lng]) => ({ lat, lng })),
-      strokeColor: '#d93025', strokeOpacity: 0.8, strokeWeight: 4, zIndex: 1,
-      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 }, offset: '0', repeat: '14px' }] })] : []
+      strokeColor: '#d93025', strokeOpacity: 1, strokeWeight: 7, zIndex: 3 })] : []
+    if (avoidedPath.length) lines.push(new google.maps.Polyline({ path: avoidedPath.map(([lat, lng]) => ({ lat, lng })),
+      strokeColor: '#d93025', strokeOpacity: 0, strokeWeight: 4, zIndex: 1,
+      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 2 }, offset: '0', repeat: '12px' }] }))
     lines.push(new google.maps.Polyline({ path: points.map(([lat, lng]) => ({ lat, lng })),
       strokeColor: selected ? '#1a73e8' : '#d93025', strokeOpacity: selected ? 1 : 0.65, strokeWeight: selected ? 6 : 4, zIndex: 2 }))
     lines.forEach(line => line.setMap(map.current))
     const bounds = new google.maps.LatLngBounds()
-    points.forEach(([lat, lng]) => bounds.extend({ lat, lng }))
-    const width = container.current.clientWidth
-    map.current.fitBounds(bounds, width > 800 ? { left: panelOpen ? 450 : 70, right: 110, top: 100, bottom: 95 } : { left: 50, right: 50, top: 110, bottom: panelOpen ? 65 : 130 })
-    return () => lines.forEach(line => line.setMap(null))
-  }, [loaded, activeRoute, panelOpen])
+    ;[...points, ...avoidedPath, ...[origin, destination].filter(Boolean).map(p => [p.lat, p.lng])].forEach(([lat, lng]) => bounds.extend({ lat, lng }))
+    const fit = () => {
+      const width = container.current.clientWidth
+      const height = container.current.clientHeight
+      map.current?.fitBounds(bounds, width > 800 ? { left: panelOpen ? 450 : 70, right: 230, top: 110, bottom: 100 }
+        : { left: 85, right: 85, top: Math.min(200, Math.round(height * 0.42)), bottom: Math.min(65, Math.round(height * 0.15)) })
+    }
+    fit()
+    const resize = new ResizeObserver(fit)
+    resize.observe(container.current)
+    return () => { resize.disconnect(); lines.forEach(line => line.setMap(null)) }
+  }, [loaded, activeRoute, panelOpen, origin, destination])
 
   useEffect(() => {
     if (!loaded || !map.current) return

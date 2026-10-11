@@ -37,3 +37,18 @@ dialog.menu-backdrop{width:100vw;height:100dvh;max-width:none;max-height:none;ma
 .audio-script{white-space:pre-wrap;font-size:13px;line-height:1.9}
 .google-navigation-button{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:44px;padding:10px 14px;border-radius:24px;background:var(--md-sys-color-primary);border:1px solid var(--md-sys-color-primary);color:var(--md-sys-color-on-primary);font-size:12px;font-weight:600;text-decoration:none}.google-navigation-button:hover{filter:brightness(.95)}.google-navigation-button span{flex:1}.navigation-note{display:block;font-size:9px;line-height:1.45;color:var(--jm-muted);margin:7px 5px 9px}.journey-footer .footer-report-button{width:100%;min-height:40px;background:transparent;color:var(--jm-accent);border:1px solid var(--jm-line);margin-top:0}
 @media(max-width:767px){.city-trigger{min-height:40px;padding:9px 10px;gap:5px;font-size:11px}.city-trigger>svg:first-child{display:none}.city-popover{width:min(330px,calc(100vw - 24px))}.panel-closed .city-picker{margin-top:55px}.vehicle-assessment-row{gap:8px;padding:13px 5px}.vehicle-assessment-row>small{font-size:8px}.photo-depth-tool{padding:12px}}
+
+/* Endpoint pins share one fixed anchor in both map providers and on mobile. */
+.map-marker.source,.map-marker.destination{width:46px;height:60px;min-height:60px;max-width:none;z-index:30}
+.map-marker.source .marker-glyph,.map-marker.destination .marker-glyph{width:46px;height:46px;border-radius:50%;transform:none;font-size:21px;font-weight:700;line-height:1}
+.map-marker.source::before,.map-marker.destination::before{content:'';position:absolute;left:21px;top:44px;width:4px;height:13px;background:#fff;box-shadow:0 1px 4px #0008}
+.map-marker.source::after,.map-marker.destination::after{content:'';position:absolute;left:18px;top:55px;width:10px;height:10px;border:2px solid #fff;border-radius:50%;background:#1a73e8;box-shadow:0 1px 4px #0008}
+.map-marker.destination::after{background:#d93025}
+.map-marker.source .marker-caption,.map-marker.destination .marker-caption{position:absolute;left:54px;top:0;min-width:145px;max-width:210px}
+.map-marker.source .marker-caption small,.map-marker.destination .marker-caption small{white-space:normal;max-width:185px;overflow:visible;font-size:11px}
+.direction-symbol.source,.direction-symbol.destination{font-size:13px;font-weight:700}
+.route-key{display:flex;flex-wrap:wrap;gap:8px 14px;margin:10px 0;font-size:11px;color:var(--jm-text)}
+.route-key>span{display:flex;align-items:center;gap:7px}.route-key i{display:block;width:23px;border-top:4px solid #1a73e8}.route-key .avoided-line{border-top:3px dashed #d93025}
+.direction-symbol.source{border:0;border-radius:0;width:20px;height:auto;margin:0}
+
+@media(max-width:767px){.map-marker.source .marker-caption,.map-marker.destination .marker-caption{left:23px;top:-65px;transform:translateX(-50%);min-width:145px;max-width:165px}.map-marker.source .marker-caption small,.map-marker.destination .marker-caption small{max-width:145px}}

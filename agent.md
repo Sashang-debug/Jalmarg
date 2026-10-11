@@ -587,6 +587,51 @@ authoritative status of the improvement work.
   deleting bucket objects; invalidation `IC5J1WDBCPM9HLXQYB1LBP6YKN` completed.
   The deployed test lab passed at https://d2vv0vxqbvoy73.cloudfront.net/.
 
+## 14. Equal-ETA detours, map endpoints and navigation handoff (11 October 2026)
+- Fixed the missing avoided-route root cause: flood sorting changed candidate order
+  before App chose the fastest route, so equal rounded ETAs incorrectly selected
+  the detour as its own baseline. Routing now retains the independently computed
+  fastest candidate, uses provider seconds and distance ties, and shares that
+  comparison with dummy report placement. Removed obsolete hardcoded map metadata.
+- Both map providers show the original avoided road as dashed red, the flooded
+  corridor as stronger red, and the selected route as blue with a visible key.
+- A/B endpoint pins use shared fixed location anchors and readable wrapping place
+  labels; directions fields match them. Responsive camera fitting includes both
+  routes and endpoints and refits on resize. Mobile captions sit above pins.
+- Google Maps handoff targets up to three points on the actual divergent bypass,
+  uses two-wheeler mode for bikes, and previews detours. Copy states that Google
+  recalculates between stops and does not import flood reports or our polyline.
+- 39 frontend tests pass, including equal-minute baseline retention, clearance,
+  exact bypass coordinates and travel mode. Production build and whitespace checks
+  pass; lint has existing warnings and zero errors.
+- Chrome reproduced Delhi 7 min/4.6 km original -> 7 min/6.1 km detour with visible
+  red avoidance and A/B pins. Google Maps received all three stops and selected
+  two-wheeler mode, showing 6.2 km. Clearance removed red geometry and bypass stops.
+  Desktop and 390x844 mobile inspected; viewport restored. Proof:
+  docs/jalmarg-delhi-route-fix.png and docs/jalmarg-delhi-route-fix-mobile.png.
+- Published frontend assets and no-cache index to the existing versioned hosting
+  bucket. No backend, IAM, or Google API configuration changes.
+- Hosted Delhi flood test verified after publication: alternative 7 min/6.1 km,
+  A/B labels, avoided-route key and three bypass coordinates present. Final
+  CloudFront invalidation: I61RIW9LJBQJDS3CB47JZYBI6X.
+
+## 15. Restore production account configuration (11 October 2026)
+- The route-fix release was accidentally built using local .env settings, omitting
+  Cognito identifiers and embedding the local /api endpoint. This caused the
+  published sign-in page to report that accounts were not configured.
+- Restored public production API URL, Cognito client/domain and AWS region in
+  frontend/.env.production; explicitly allow this public-only file in Git.
+- Production Vite builds now reject missing account/API settings and non-HTTPS API
+  or Cognito URLs. An empty client-ID build was verified to fail before bundling.
+- Verified existing Cognito code flow and exact production callback read-only.
+  All four production settings appear in the built JavaScript. Production build,
+  39 frontend tests and whitespace validation pass. Republished frontend assets
+  and no-cache entry page to the existing hosting bucket.
+- Hosted sign-in verified: configuration warnings gone; Continue to sign in opens
+  the existing Cognito email/password page with authorization code + PKCE and the
+  correct production callback. No credentials entered or account records changed.
+  Screenshot: docs/jalmarg-signin-config-restored.png.
+
 ## README presentation refresh — 2026-10-11
 
 - Reworked the GitHub README around the waterlogging problem, intended impact,

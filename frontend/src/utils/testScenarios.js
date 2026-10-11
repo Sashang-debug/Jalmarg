@@ -1,3 +1,5 @@
+import { compareRouteTime } from './floodRouting.js'
+
 export const TEST_SCENARIOS = [
   { id: 'clear', name: 'Clear roads', expected: 'A street route should be selected.' },
   { id: 'flooded', name: 'Flooded fastest road', expected: '2-wheelers/cars must avoid the sample flood or show no alternative.' },
@@ -6,7 +8,7 @@ export const TEST_SCENARIOS = [
 ]
 export function sampleReports(scenario, candidates, city, now = Date.now()) {
   if (scenario === 'clear' || !candidates.length) return []
-  const fastest = [...candidates].sort((a, b) => a.durationMins - b.durationMins)[0]
+  const fastest = [...candidates].sort(compareRouteTime)[0]
   const point = scenario === 'blocked' ? fastest.path[0] : fastest.path[Math.floor(fastest.path.length * 0.5)]
   const deep = scenario === 'blocked'
   const status = scenario === 'cleared' ? 'CLEARED' : 'NEEDS_REVIEW'

@@ -1,7 +1,10 @@
-import destinationIcon from '../assets/markers/destination.svg?raw'
 import sourceIcon from '../assets/markers/source.svg?raw'
 import hazardIcon from '../assets/markers/hazard.svg?raw'
 import waterIcon from '../assets/markers/water.svg?raw'
+
+export function markerAnchor(kind) {
+  return kind === 'source' || kind === 'destination' ? [23, 60] : kind === 'gps' ? [13.5, 13.5] : [24, 24]
+}
 
 // Only library-authored icon markup is inserted; all user content uses textContent.
 export function markerContent({ kind, name, level, critical, label }) {
@@ -9,12 +12,13 @@ export function markerContent({ kind, name, level, critical, label }) {
   root.className = `map-marker ${kind} ${critical ? 'critical' : ''}`
   const glyph = document.createElement('span')
   glyph.className = 'marker-glyph'
-  glyph.innerHTML = kind === 'hazard' ? hazardIcon : kind === 'destination' ? destinationIcon : sourceIcon
+  if (kind === 'source' || kind === 'destination') glyph.textContent = kind === 'source' ? 'A' : 'B'
+  else glyph.innerHTML = kind === 'hazard' ? hazardIcon : sourceIcon
   root.appendChild(glyph)
   if (kind !== 'gps') {
     const caption = document.createElement('span'); caption.className = 'marker-caption'
-    const title = document.createElement('strong'); title.textContent = kind === 'hazard' ? level || 'Waterlogging' : kind === 'destination' ? label || 'Destination' : 'Starting point'
-    const detail = document.createElement('small'); detail.textContent = name
+    const title = document.createElement('strong'); title.textContent = kind === 'hazard' ? level || 'Waterlogging' : kind === 'destination' ? label || 'B · Destination' : 'A · Start'
+    const detail = document.createElement('small'); detail.textContent = name || 'Selected location'
     caption.append(title, detail); root.appendChild(caption)
     if (kind === 'hazard') {
       const drop = document.createElement('span'); drop.className = 'marker-water'
@@ -22,7 +26,7 @@ export function markerContent({ kind, name, level, critical, label }) {
       glyph.appendChild(drop)
     }
   }
-  root.title = `${kind === 'hazard' ? 'Waterlogging report' : kind === 'gps' ? 'Your location' : kind === 'destination' ? label || 'Destination' : 'Starting point'}: ${name || ''}`
+  root.title = `${kind === 'hazard' ? 'Waterlogging report' : kind === 'gps' ? 'Your location' : kind === 'destination' ? label || 'B · Destination' : 'A · Start'}: ${name || ''}`
   root.setAttribute('aria-label', root.title)
   return root
 }

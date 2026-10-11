@@ -4,7 +4,7 @@ import { CITIES } from '../utils/cities'
 import { STATUS_LABELS, timeAgo } from '../utils/incidentsApi'
 import { TEST_SCENARIOS, checkTestOutcome } from '../utils/testScenarios'
 import PlaceSearch from './PlaceSearch'
-import { buildGoogleMapsNavigationUrl, routeCorridorWaypoints } from '../utils/googleNavigation'
+import { buildGoogleMapsNavigationUrl, navigationWaypoints } from '../utils/googleNavigation'
 
 export default function JourneyPanel({ city, origin, destination, onOrigin, onDestination, onSwap, onPick, vehicle, onVehicle, route, locating, onLocate, incidents, onReport, onViewEvidence, onAudio, demo, now, apiKey, scenario, onScenario, onClose }) {
   const [expanded, setExpanded] = useState(false)
@@ -18,7 +18,7 @@ export default function JourneyPanel({ city, origin, destination, onOrigin, onDe
   const detour = selected && route.fastest?.blocking?.length > 0 && selected !== route.fastest
   const outcome = demo && checkTestOutcome(scenario, route, vehicle)
   const navigationUrl = buildGoogleMapsNavigationUrl({ origin, destination, route, vehicle })
-  const navigationStops = route.fastest?.blocking?.length && selected ? routeCorridorWaypoints(selected.path).length : 0
+  const navigationStops = navigationWaypoints(route).length
   return <aside ref={panelRef} className={`journey-panel ${expanded ? 'expanded' : ''}`} aria-label="Directions" onFocusCapture={event => { if (event.target.tagName === 'INPUT' && innerWidth < 768) setExpanded(true) }}>
     <button className="sheet-handle" onPointerDown={event => { dragStart.current = event.clientY; dragged.current = false; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerUp={event => {
       if (Math.abs(event.clientY - dragStart.current) > 25) { dragged.current = true; setExpanded(event.clientY < dragStart.current) }
@@ -26,7 +26,7 @@ export default function JourneyPanel({ city, origin, destination, onOrigin, onDe
     <header className="directions-heading"><div><Navigation size={21} /><h1>Directions</h1></div>{selected && <span className="mobile-route-glance">{selected.durationMins} min · {selected.distanceKm.toFixed(1)} km</span>}<button className="icon-button close-directions" aria-label="Close directions" onClick={onClose}><X size={21} /></button></header>
     <div className="journey-points">
       {[['source', origin, onOrigin, 'Starting point', 'ORIGIN'], ['destination', destination, onDestination, 'Destination', 'DESTINATION']].map(([kind, point, onChange, label, mode]) => <div className="direction-field" key={`${kind}-${city}`}>
-        <span className={`direction-symbol ${kind}`}><MapPin size={19} /></span><PlaceSearch label={label} placeholder={label === 'Destination' ? 'Choose destination' : 'Choose starting point'} value={point} city={city} bias={point || origin} apiKey={apiKey} onSelect={onChange} onDirty={() => onChange(null)} compact />
+        <span className={`direction-symbol ${kind}`}>{kind === 'source' ? 'A' : 'B'}</span><PlaceSearch label={label} placeholder={label === 'Destination' ? 'Choose destination' : 'Choose starting point'} value={point} city={city} bias={point || origin} apiKey={apiKey} onSelect={onChange} onDirty={() => onChange(null)} compact />
         <button className="icon-button pick-point" title={`Choose ${label.toLowerCase()} on map`} aria-label={`Choose ${label.toLowerCase()} on map`} onClick={() => onPick(mode)}><MapPin size={17} /></button></div>)}
       <button className="swap-button" disabled={!origin || !destination} onClick={onSwap} aria-label="Swap starting point and destination"><ArrowDownUp size={18} /></button>
     </div>
@@ -38,8 +38,8 @@ export default function JourneyPanel({ city, origin, destination, onOrigin, onDe
     <section className="route-summary" aria-live="polite">
       {route.status === 'LOADING' ? <div className="route-loading"><span /><span /><p>Finding roads and checking reports…</p></div>
         : selected ? <><div className="route-summary-title"><Navigation size={21} /><span>{detour ? 'Alternative around reported water' : 'Suggested route'}</span><span className="route-city">{CITIES[city]?.name}</span></div>
-          <div className="route-numbers"><strong>{selected.durationMins}<small>min</small></strong><span>({selected.distanceKm.toFixed(1)} km)</span>{detour && <span className="detour-time">+{selected.durationMins - route.fastest.durationMins} min</span>}</div>
-          <p>{hazards.length ? 'Reports are close to this route. Review conditions before travelling.' : 'No active reports intersect this route. Conditions may be unreported.'}</p><small>{route.timingNote}</small>{route.providerNotice && <p className="provider-notice">{route.providerNotice}</p>}<p className="vehicle-timing-note">{vehicle === 'BIKE' ? route.timingProvider === 'GOOGLE' ? '2-wheeler travel mode' : 'Driving fallback; a 2-wheeler-specific ETA is unavailable.' : 'Sedan and SUV share driving timings; flood avoidance may select different roads.'}</p></>
+          <div className="route-numbers"><strong>{selected.durationMins}<small>min</small></strong><span>({selected.distanceKm.toFixed(1)} km)</span>{detour && <span className="detour-time">{selected.durationMins === route.fastest.durationMins ? 'Similar ETA' : `${selected.durationMins - route.fastest.durationMins > 0 ? '+' : ''}${selected.durationMins - route.fastest.durationMins} min`}</span>}</div>
+          <div className="route-key"><span><i className="selected-line" />Selected route</span>{detour && <span><i className="avoided-line" />Avoided route · reported water</span>}</div><p>{hazards.length ? 'Reports are close to this route. Review conditions before travelling.' : 'No active reports intersect this route. Conditions may be unreported.'}</p><small>{route.timingNote}</small>{route.providerNotice && <p className="provider-notice">{route.providerNotice}</p>}<p className="vehicle-timing-note">{vehicle === 'BIKE' ? route.timingProvider === 'GOOGLE' ? '2-wheeler travel mode' : 'Driving fallback; a 2-wheeler-specific ETA is unavailable.' : 'Sedan and SUV share driving timings; flood avoidance may select different roads.'}</p></>
           : <><div className="route-warning"><AlertTriangle size={22} /><h2>{route.status === 'NO_ALTERNATIVE' ? 'No available alternative' : 'Choose your journey'}</h2></div><p>{route.error || (route.status === 'NO_ALTERNATIVE' ? 'All returned routes meet a reported flood above this vehicle’s avoidance setting.' : 'Search for a starting point and destination.')}</p></>}
     </section>
     <div className="journey-details"><button className="explanation-toggle" onClick={() => setWhyOpen(!whyOpen)} aria-expanded={whyOpen}><span><Info size={16} />Why this route?</span>{whyOpen ? <ChevronUp size={17} /> : <ChevronDown size={17} />}</button>
@@ -52,8 +52,8 @@ export default function JourneyPanel({ city, origin, destination, onOrigin, onDe
       <button className="secondary-button audio-button" disabled={!selected} onClick={onAudio}><Volume2 size={18} />Listen to route advisory</button>
       <p className="freshness-note"><Clock size={13} />Reports stay active for four hours.</p>
     </div>
-    <footer className="journey-footer">{navigationUrl && <><a className="google-navigation-button" href={navigationUrl} target="_blank" rel="noreferrer"><Navigation size={18} /><span>{navigationStops ? 'Open safe route in Google Maps' : 'Navigate with Google Maps'}</span><ExternalLink size={16} /></a>
-      {navigationStops > 0 && <small className="navigation-note">{navigationStops} route stops preserve this checked corridor; Google may recalculate.</small>}</>}
+    <footer className="journey-footer">{navigationUrl && <><a className="google-navigation-button" href={navigationUrl} target="_blank" rel="noreferrer"><Navigation size={18} /><span>{navigationStops ? 'Preview detour in Google Maps' : 'Navigate with Google Maps'}</span><ExternalLink size={16} /></a>
+      {navigationStops > 0 && <small className="navigation-note">{navigationStops} bypass stops included. Google recalculates between stops and does not receive flood reports; check the preview before starting.</small>}</>}
       {navigationUrl ? <button className="secondary-button footer-report-button" onClick={onReport}><Droplets size={18} />Report waterlogging</button>
         : <md-filled-button onClick={onReport}><Droplets slot="icon" size={18} />Report waterlogging</md-filled-button>}</footer>
   </aside>

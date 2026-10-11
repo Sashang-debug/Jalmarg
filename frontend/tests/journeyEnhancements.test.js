@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createGoogleStreetProvider } from '../src/utils/journeyRouting.js'
 import { routeAdvisory } from '../src/utils/routeAdvisory.js'
 import { assessVehicle, photoDepth } from '../src/utils/vehicleAssessment.js'
-import { buildGoogleMapsNavigationUrl, routeCorridorWaypoints } from '../src/utils/googleNavigation.js'
+import { buildGoogleMapsNavigationUrl, navigationWaypoints } from '../src/utils/googleNavigation.js'
 const now = Date.now()
 const report = {roadName:'Station road',depthCm:50,status:'NEEDS_REVIEW',expiresAt:new Date(now+3600000).toISOString()}
 const origin={lat:26.24,lng:78.17,name:'Campus'}, destination={lat:26.22,lng:78.18,name:'Station'}
@@ -67,10 +67,9 @@ test('Google Maps navigation carries ordered JalMarg corridor stops for a flood 
   const route={selected:{path},fastest}
   const url=new URL(buildGoogleMapsNavigationUrl({origin,destination,route,vehicle:'BIKE'}))
   assert.equal(url.hostname,'www.google.com')
-  assert.equal(url.searchParams.get('dir_action'),'navigate')
-  assert.equal(url.searchParams.get('travelmode'),'driving')
-  assert.equal(url.searchParams.get('waypoints').split('|').length,routeCorridorWaypoints(path).length)
-  assert.match(url.searchParams.get('utm_content'),/2wheeler/)
+  assert.equal(url.searchParams.has('dir_action'),false)
+  assert.equal(url.searchParams.get('travelmode'),'two-wheeler')
+  assert.equal(url.searchParams.get('waypoints').split('|').length,navigationWaypoints(route).length)
 })
 test('Google Maps navigation does not invent waypoints for an unaffected route',()=>{
   const path=[[26.24,78.17],[26.23,78.175],[26.22,78.18]]
@@ -86,4 +85,19 @@ test('Google Maps navigation does not invent waypoints for an unaffected route',
   const request = createGoogleStreetProvider(never, 'SEDAN')([origin,destination], controller.signal)
   controller.abort()
   await assert.rejects(request, /abort/i)
+})
+
+test('handoff anchors target a short bypass rather than shared parts of a long trip', () => {
+  const path = [[26.24,78.17],[26.235,78.17],[26.233,78.174],[26.23,78.174],[26.228,78.174],[26.226,78.17],[26.20,78.17]]
+  const fastest = { path: [[26.24,78.17],[26.20,78.17]], blocking: [report] }
+  const route = { selected: { path, blocking: [] }, fastest }
+  assert.deepEqual(navigationWaypoints(route), [
+    {lat:26.233,lng:78.174}, {lat:26.23,lng:78.174}, {lat:26.228,lng:78.174},
+  ])
+  const url = new URL(buildGoogleMapsNavigationUrl({origin,destination,route,vehicle:'SEDAN'}))
+  assert.equal(url.searchParams.get('waypoints'), '26.233000,78.174000|26.230000,78.174000|26.228000,78.174000')
+  assert.equal(url.searchParams.get('travelmode'), 'driving')
+  const clear = {...route, fastest: {...fastest, blocking: []}}
+  assert.deepEqual(navigationWaypoints(clear), [])
+  assert.equal(new URL(buildGoogleMapsNavigationUrl({origin,destination,route:clear,vehicle:'SEDAN'})).searchParams.has('waypoints'), false)
 })

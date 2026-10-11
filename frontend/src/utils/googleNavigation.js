@@ -1,3 +1,5 @@
+import { distanceToSegmentMeters } from './floodRouting.js'
+
 function validPoint(point) {
   return point && Number.isFinite(point.lat) && Number.isFinite(point.lng)
 }
@@ -24,12 +26,28 @@ export function routeCorridorWaypoints(path, count = 3) {
     .map(([lat, lng]) => ({ lat, lng }))
 }
 
+// Mobile Maps URLs support three stops. Spend those stops on the actual bypass,
+// rather than on long stretches shared with the flooded original route.
+export function navigationWaypoints(route) {
+  const path = route?.selected?.path
+  const fastest = route?.fastest
+  if (!path?.length || !fastest?.blocking?.length || route.selected.blocking?.length) return []
+  const divergent = path.slice(1, -1).filter(([lat, lng]) =>
+    fastest.path?.length > 1 && fastest.path.slice(1).every((end, index) =>
+      distanceToSegmentMeters({ lat, lng }, fastest.path[index], end) > 120))
+  if (!divergent.length) return routeCorridorWaypoints(path)
+  const indices = [...new Set([0, Math.floor((divergent.length - 1) / 2), divergent.length - 1])]
+  return indices.map(index => ({ lat: divergent[index][0], lng: divergent[index][1] }))
+}
+
 export function buildGoogleMapsNavigationUrl({ origin, destination, route, vehicle }) {
   if (!validPoint(origin) || !validPoint(destination) || !route?.selected?.path?.length) return ''
-  const detour = route.fastest?.blocking?.length > 0 && route.fastest !== route.selected
-  const waypoints = detour ? routeCorridorWaypoints(route.selected.path) : []
-  const query = new URLSearchParams({ api: '1', origin: pointText(origin), destination: pointText(destination), travelmode: 'driving', dir_action: 'navigate' })
+  const waypoints = navigationWaypoints(route)
+  const query = new URLSearchParams({ api: '1', origin: pointText(origin), destination: pointText(destination),
+    travelmode: vehicle === 'BIKE' ? 'two-wheeler' : 'driving' })
+  // Preview the ordered bypass stops before navigation; Maps cannot import our
+  // polyline or flood restrictions and may calculate different roads between stops.
   if (waypoints.length) query.set('waypoints', waypoints.map(pointText).join('|'))
-  if (vehicle === 'BIKE') query.set('utm_content', 'jalmarg_2wheeler_safe_corridor')
+  else query.set('dir_action', 'navigate')
   return `https://www.google.com/maps/dir/?${query}`
 }
